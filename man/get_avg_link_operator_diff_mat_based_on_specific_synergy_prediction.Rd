@@ -4,9 +4,11 @@
 \alias{get_avg_link_operator_diff_mat_based_on_specific_synergy_prediction}
 \title{Get average link operator difference matrix based on specific synergy prediction}
 \usage{
-
-  get_avg_link_operator_diff_mat_based_on_specific_synergy_prediction(model.predictions,
-  models.link.operator, predicted.synergies)
+get_avg_link_operator_diff_mat_based_on_specific_synergy_prediction(
+  model.predictions,
+  models.link.operator,
+  predicted.synergies
+)
 }
 \arguments{
 \item{model.predictions}{a \code{data.frame} object with rows the models and
@@ -17,7 +19,7 @@ combination inhibited model or in any of the two single-drug inhibited models)}
 
 \item{models.link.operator}{matrix (nxm) with n models and m nodes. The row
 names of the matrix specify the models' names (same order as in the
-\code{models.mcc} parameter) whereas the column names specify the name of the
+\code{model.predictions} parameter) whereas the column names specify the name of the
 network nodes (gene, proteins, etc.). Possible values for each \emph{model-node
 element} are either \emph{0} (\strong{AND NOT} link operator), \emph{1}
 (\strong{OR NOT} link operator) or \emph{0.5} if the node is not targeted by
@@ -35,7 +37,6 @@ individual row was based on the prediction or not of a specific synergistic
 drug combination.
 The row names are the predicted synergies, one per row, while the columns
 represent the network's node names. Values are in the [-1,1] interval.
-the classification was based on the models' MCC values.
 }
 \description{
 This function uses the \code{\link{get_avg_activity_diff_mat_based_on_specific_synergy_prediction}}
@@ -61,14 +62,17 @@ node with regard to the parameterization).
 }
 
 \seealso{
-Other average data difference functions: \code{\link{get_avg_activity_diff_based_on_mcc_clustering}},
-  \code{\link{get_avg_activity_diff_based_on_specific_synergy_prediction}},
-  \code{\link{get_avg_activity_diff_based_on_synergy_set_cmp}},
-  \code{\link{get_avg_activity_diff_based_on_tp_predictions}},
-  \code{\link{get_avg_activity_diff_mat_based_on_mcc_clustering}},
-  \code{\link{get_avg_activity_diff_mat_based_on_specific_synergy_prediction}},
-  \code{\link{get_avg_activity_diff_mat_based_on_tp_predictions}},
-  \code{\link{get_avg_link_operator_diff_mat_based_on_mcc_clustering}},
-  \code{\link{get_avg_link_operator_diff_mat_based_on_tp_predictions}}
+Other average data difference functions: 
+\code{\link{get_avg_activity_diff_based_on_mcc_clustering}()},
+\code{\link{get_avg_activity_diff_based_on_specific_synergy_prediction}()},
+\code{\link{get_avg_activity_diff_based_on_synergy_set_cmp}()},
+\code{\link{get_avg_activity_diff_based_on_tp_predictions}()},
+\code{\link{get_avg_activity_diff_mat_based_on_mcc_clustering}()},
+\code{\link{get_avg_activity_diff_mat_based_on_specific_synergy_prediction}()},
+\code{\link{get_avg_activity_diff_mat_based_on_tp_predictions}()},
+\code{\link{get_avg_link_operator_diff_based_on_specific_synergy_prediction}()},
+\code{\link{get_avg_link_operator_diff_based_on_synergy_set_cmp}()},
+\code{\link{get_avg_link_operator_diff_mat_based_on_mcc_clustering}()},
+\code{\link{get_avg_link_operator_diff_mat_based_on_tp_predictions}()}
 }
 \concept{average data difference functions}
