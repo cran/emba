@@ -1,0 +1,474 @@
+---
+title: "emba"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{emba}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+# Intro
+
+The *emba* R package name stands for *Ensemble (Boolean) Model Biomarker Analysis*.
+It's main purpose is to be used on a dataset consisted of an **ensemble of boolean models**.
+These models are usually (but not necessarily) different versions of the same initial model, parameterized in different ways (e.g. some boolean operators in the model equations have changed from *OR* to *AND* or vice-versa).
+A prerequisite for using this package, is that this model dataset must be tested in-silico (using some computational way) against a list of drug combinations, in order to assess which drugs combinations behave *synergistically* for which models.
+An example software that generates such boolean model ensembles and performs a comprehensive drug response analysis on them is the DrugLogics NTNU software pipeline (see respective [documentation](https://druglogics.github.io/druglogics-doc/)).
+
+Given a list of *gold-standard* (lab-observed/verified) **synergies** ^[Note that the assessment of these synergies based on experimental data (usually High-Throughput Screening data) is an analysis on its own], this package enables the easy grouping of the models into different classes based on a specific performance metric evaluation.
+This model classification enables the discovery and visualization of **biomarkers** - nodes whose *activity* and/or boolean model *parameterization* might affect either the prediction performance of those models or the manifestation of the predicted synergies.
+
+In the next sections we will describe the main inputs and outputs of the *general analysis* functions (which group a lot of functionality into one) and provide some insights on the implementation behind.
+Biomarkers will be assessed and visualized using a test dataset generated from the DrugLogics software mentioned above.
+
+The complementary R package [usefun](https://github.com/bblodfon/usefun) has various helpful functions that are used both inside the *emba* package and during the analysis below.
+
+For further analyses using this package on boolean model ensemble datasets see this [GitHub repository](https://github.com/bblodfon/gitsbe-model-analysis/).
+See also [an example](https://bblodfon.github.io/gitsbe-model-analysis/atopo/cell-lines-2500/) that demonstrates all the intermediate steps included in the *general analysis* functions as well as other miscellaneous usages that this guide does not cover.
+Lastly, you might also want to check a [nice presentation](https://bblodfon.github.io/r-pres/digital_life_2019.html#12) I made for a conference about this package.
+
+# Setup
+
+```{r setup, message=FALSE}
+# libraries
+library(emba)
+library(usefun)
+library(dplyr)
+library(knitr)
+library(Ckmeans.1d.dp)
+
+# wrapper to change printing to invisible
+pr = function(x) invisible(x)
+```
+
+# Input
+
+## Test dataset
+
+The test dataset we will use has $7500$ boolean models with $139$ nodes each. 
+It helps to think of each boolean model as a **network of nodes** where the edges represent either activation or inhibition of the corresponding target and the nodes activity can be either active (1) or inactive (0).
+
+The models have been assessed for synergy against a total of $153$ drug combinations.
+
+```{r input-1}
+data.list = readRDS(url("https://github.com/bblodfon/emba/blob/master/vignettes/data.rds?raw=true"))
+
+model.predictions = data.list$model.predictions
+models.stable.state = data.list$models.stable.state
+models.link.operator = data.list$models.equations
+observed.synergies = data.list$observed.synergies
+
+# (x,y) coordinates for visualization
+nice.layout = data.list$nice.layout
+# model network as an igraph object
+net = data.list$net
+
+# drug combinations
+drug.combos = colnames(model.predictions)
+
+# change model names (shorter names for readability)
+model.names = paste0("model", 1:7500)
+rownames(model.predictions) = model.names
+rownames(models.stable.state) = model.names
+rownames(models.link.operator) = model.names
+```
+
+## Model Predictions
+
+This data represents the results of **in-silico testing the boolean models against a drug combination dataset**.
+More specifically, the model predictions is a `data.frame` whose values (corresponding to a specific **model-drug combination element**) can be one of the following:
+
+- 0 (no synergy predicted)
+- 1 (synergy was predicted)
+- `NA` (in case the model couldn't be assessed for synergy, e.g. there were no stable states in either the drug combination perturbed model or in any of the two single-drug perturbed models).
+
+```{r input-2}
+model.predictions[1:5, 77:84] %>% kable(caption = "Model predictions example")
+```
+
+## Model stable states
+
+Each **model** must have a *stable state configuration* where the **nodes** have fixed to either 0 (inactive state) or 1 (active state).
+In other words, a **fixpoint attractor**.
+Of course, if a model has multiple attractors or other methods are used to derive a solution to the system of boolean equations that is the model itself, then *continuous* activity state values (in the $[0,1]$ interval) are also supported.
+
+```{r input-3}
+models.stable.state[1:5, 5:11] %>% kable(caption = "Model stable states example")
+```
+
+## Model link operators
+
+This is a non-essential input for the functions we will use, but we include it here since the test dataset supports it.
+It is a way to represent the **structure (parameterization)** of the boolean models in the dataset.
+
+If each boolean model is a list of boolean equations of the form:
+
+`T = (A1 OR A2 OR ...) AND NOT (I1 OR I2 OR ...)`
+
+, where the `A` and `I` nodes are the activating and inhibiting regulators respectively of the **target node** `T` and the `AND NOT` is the **link (balance) operator**, we can specify a `data.frame` object whose values (corresponding to a specific **model-target node element**) can be one of the following:
+
+- 0 (`AND NOT` link operator)
+- 1 (`OR NOT` link operator) 
+- 0.5 (if the target node does not have *both* activating and inhibiting regulators and thus the corresponding boolean equation has **no link operator**)
+
+```{r input-4}
+models.link.operator[1:5, 1:10] %>% kable(caption = "Models link operator example")
+```
+
+Note that in the test dataset, the nodes (columns of the `models.link.operator` object) who didn't have a link operator are pruned.
+
+## Observed (GS) synergies
+
+A list of *gold standard (GS)* drug combinations which have been termed as **synergistic** via experimental and/or other computational methods.
+These drug combinations must be a subset of the ones tested in the models (the column names of the `model.predictions` data).
+
+```{r input-5, results='asis'}
+usefun::pretty_print_vector_values(observed.synergies, vector.values.str = "observed synergies")
+```
+
+# Performance biomarkers
+
+*Performance biomarkers* are nodes in our studied networks (boolean models) whose activity state and/or boolean model parameterization (link operator) affects the prediction performance of those models.
+These nodes can be thus used as indicators of either *activity* or *structural* changes that have a positive effect on the prediction performance of our models.
+
+The model performance can be assessed via various ways. 
+In this package we offer two ways to group the models to different classification categories: either based on the 
+**number of true positive (TP) predictions** or on the **Matthews correlation coefficient (MCC) score** with respect to the drug combination dataset tested for synergy.
+The function `emba::biomarker_tp_analysis()` is used for the former classification and the function `emba::biomarker_mcc_analysis()` for the latter.
+Note that it's generally better to use the MCC classification, since it's a more robust performance evaluation metric compared to the number of TP predictions, since it takes into account all of the four confusion matrix values.
+
+When the models have been grouped to different classification categories, their nodes activity or boolean model parameterization can be summarised in each group and compared to the others, obtaining thus the expected biomarkers using the methodology described below.
+
+## TP-based analysis
+
+We use the `emba::biomarker_tp_analysis()` function with the specified inputs:
+```{r tp-analysis-1}
+tp.analysis.res = emba::biomarker_tp_analysis(
+  model.predictions, 
+  models.stable.state, 
+  models.link.operator, 
+  observed.synergies, 
+  penalty = 0.1,
+  threshold = 0.55)
+```
+
+The `penalty` term is used to reduce the bias when model groups have different *sizes*.
+For example, if I were to compare the average activity of nodes between two groups of models, with respective group sizes 5 and 1000, then the result would be heavily biased towards the group with the larger size, making thus the quality of the results coming out of this comparison questionable.
+As such, with `penalty` values closer to 0, more bias is introduced and we expect more biomarkers to be found.
+The default value of $0.1$ is a good rule-of-thumb choice for minimizing such biases.
+See more info on `emba::get_vector_diff()`.
+
+---
+
+As a first result, we get the predicted synergies - i.e. the drug combinations that are a subset of the observed ones and were **predicted by at least one** of the models in the dataset:
+```{r tp-analysis-2, results = 'asis'}
+usefun::pretty_print_vector_values(tp.analysis.res$predicted.synergies, vector.values.str = "predicted synergies")
+```
+
+The percentage of true positive predicted synergies is thus `r round(100*length(tp.analysis.res$predicted.synergies)/length(observed.synergies), digits = 1)`%.
+Such a low number might be a sign that the models quality is poor (need for a different parameterization) or other reasons like incorrect assessment of the gold standard synergies, etc.
+
+The next informative barplot shows the distribution of models according to their true positive predictions:
+```{r tp-analysis-3, fig.align='center', fig.width=7, fig.height=5.6}
+pr(emba::make_barplot_on_models_stats(table(tp.analysis.res$models.synergies.tp), 
+  title = "True Positive Synergy Predictions",
+  xlab = "Number of maximum correctly predicted synergies",
+  ylab = "Number of models"))
+```
+
+- The **maximum number of predicted synergies by any individual model** is 3
+- There are only 2 models in total that could predict these 3 synergies
+- Almost half of the models make no true positive predictions
+- This model classification is largely *skewed*
+
+Next result we get is the **average activity differences** per network node for all group classifications:
+```{r tp-analysis-4}
+tp.analysis.res$diff.state.tp.mat %>% 
+  as.data.frame() %>%
+  select(c("AKT","PTEN","PSEN1","STAT3","CEBPA")) %>% # show only part of the matrix
+  kable(caption = "Average Activity Difference Matrix")
+```
+
+- Rows represent the different classification group matchings, e.g. (1,2) means the models that predicted 1 TP synergy vs the models that predicted 2 TP synergies.
+- All values are in the $[-1,1]$ interval. 
+The more negative the activity difference value, the more *inhibited* the node is in the better performance models (e.g. `STAT3` node).
+The more positive the activity difference value, the more *active* the node is in the better performance models (e.g. `CEBPA` node).
+- Based on a **user-given** `threshold` level, a node is declared as an **activity biomarker** if it's highest absolute value surpasses that threshold (see `emba::get_biomarkers()` for more info).
+
+In our case, `threshold = 0.55` and thus `CEBPA` and `PSEN1` are returned as active biomarkers:
+```{r tp-analysis-5, results='asis'}
+usefun::pretty_print_vector_values(tp.analysis.res$biomarkers.tp.active,
+  vector.values.str = "active biomarkers")
+usefun::pretty_print_vector_values(tp.analysis.res$biomarkers.tp.inhibited,
+  vector.values.str = "inhibited biomarkers")
+```
+
+With the models initial network as an [igraph](https://igraph.org/r/) object (see `emba::construct_network()` on how to create such a `net` object), we can visualize every row of the above matrix as follows:
+```{r tp-analysis-6, fig.align='center', fig.width=7, fig.height=5.5}
+pr(emba::plot_avg_state_diff_graph(net, tp.analysis.res$diff.state.tp.mat["(2,3)",], 
+  layout = nice.layout, title = "Bad models (2 TP) vs Good models (3 TP)"))
+```
+
+Note that with less `penalty`, more bias would be introduced and thus more biomarkers would be found (even for a higher chosen `threshold`):
+```{r tp-analysis-7, results='asis'}
+tp.analysis.res.biased = emba::biomarker_tp_analysis(
+  model.predictions, 
+  models.stable.state, 
+  models.link.operator, 
+  observed.synergies, 
+  penalty = 0,
+  threshold = 0.7)
+
+usefun::pretty_print_vector_values(tp.analysis.res.biased$biomarkers.tp.active,
+  vector.values.str = "active biomarkers")
+
+usefun::pretty_print_vector_values(tp.analysis.res.biased$biomarkers.tp.inhibited,
+  vector.values.str = "inhibited biomarkers")
+```
+
+Last result we get is the **average link operator differences** per network node (whose boolean equation had a link operator) for all group classifications:
+```{r tp-analysis-8}
+tp.analysis.res$diff.link.tp.mat %>% 
+  as.data.frame() %>%
+  select(c("AKT","PTEN","PSEN1","STAT3","CEBPA")) %>% # show only part of the matrix
+  kable(caption = "Average Link Operator Difference Matrix")
+```
+
+- Rows again represent the different classification group matchings, e.g. (1,2) means the models that predicted 1 TP synergy vs the models that predicted 2 TP synergies.
+- All values are in the $[-1,1]$ interval.
+A value closer to $-1$ means that on average, the node's boolean equation has the *AND NOT* link operator in the better performance models (e.g. `STAT3` node).
+A value closer to $1$ means that on average, the node's boolean equation has mostly the *OR NOT* link operator in the better performance models (e.g. `CEBPA` node).
+- Based on the given `threshold` level, a node is declared as a **link operator biomarker** if it's highest absolute value surpasses that threshold (see `emba::get_biomarkers()` for more info).
+
+In our case, `threshold = 0.55` and thus `CEBPA` is returned as an `OR` link operator biomarker:
+```{r tp-analysis-9, results='asis'}
+usefun::pretty_print_vector_values(tp.analysis.res$biomarkers.tp.or,
+  vector.values.str = "'OR' biomarkers")
+usefun::pretty_print_vector_values(tp.analysis.res$biomarkers.tp.and,
+  vector.values.str = "'AND' biomarkers")
+```
+
+We can also visualize every row of the average link operator differences matrix as follows:
+```{r tp-analysis-10, fig.align='center', fig.width=7, fig.height=5.5}
+pr(emba::plot_avg_link_operator_diff_graph(net, tp.analysis.res$diff.link.tp.mat["(2,3)",], 
+  layout = nice.layout, title = "Bad models (2 TP) vs Good models (3 TP)"))
+```
+
+Interpreting the result regarding the `CEBPA` biomarker, we look back at its boolean equation and we see that the higher performance models must have the `OR NOT` link operator in order for `CEBPA` to be in an active (ON) state (an `AND NOT` results mostly on an inhibited state for `CEBPA`):
+
+`CEBPA = (GSK3B OR MAP2K1 OR MEK1/2) OR NOT CTNNB1`
+
+## MCC-based analysis
+
+We use the `emba::biomarker_mcc_analysis()` function with the specified inputs:
+```{r mcc-analysis-1}
+mcc.analysis.res = emba::biomarker_mcc_analysis(
+  model.predictions, 
+  models.stable.state, 
+  models.link.operator, 
+  observed.synergies, 
+  threshold = 0.65,
+  num.of.mcc.classes = 4,
+  penalty = 0.2)
+```
+
+- The `penalty` term is used to reduce the bias when model groups have different *sizes* (default value is $0.1$).
+See more info about this on the TP-based analysis above and on the documentation of the function `emba::get_vector_diff()`.
+- We can choose the number of model groups to be created (`num.of.mcc.classes` parameter, with default value $5$).
+Internally, the function `Ckmeans.1d.dp()` is used to perform an optimal univariate *k-means* clustering on the models MCC scores, i.e. **it groups the models to different MCC classes**, with higher classes having higher MCC scores (corresponding thus to better performance models).
+
+---
+
+First result is the predicted synergies, which are the same as the ones found with the TP-based analysis (the model predictions did not change).
+As such, the drug combinations which were **predicted by at least one of the models** in the dataset are:
+```{r mcc-analysis-2, results = 'asis'}
+usefun::pretty_print_vector_values(mcc.analysis.res$predicted.synergies, vector.values.str = "predicted synergies")
+```
+
+We can get a first idea of the range and distribution of the models MCC scores with the next barplot:
+```{r mcc-analysis-3, fig.align='center', fig.width=7, fig.height=5.8}
+pr(emba::make_barplot_on_models_stats(table(mcc.analysis.res$models.mcc), 
+  title = "MCC scores", xlab = "MCC value", 
+  ylab = "Number of models", cont.values = TRUE))
+```
+
+- There are no relatively bad models (MCC values close to $-1$)
+- Most of the models perform a little better than random prediction ($MCC > 0$)
+
+We can also plot the **MCC-model histogram**, which in addition shows the estimated *density* (how many models) and *width* (MCC range) of each MCC class:
+```{r mcc-analysis-4, fig.align='center', fig.width=7, fig.height=5.5}
+models.mcc = mcc.analysis.res$models.mcc
+num.of.mcc.classes = 4
+
+res = Ckmeans.1d.dp(x = models.mcc, k = num.of.mcc.classes)
+models.cluster.ids = res$cluster
+
+pr(emba::plot_mcc_classes_hist(models.mcc, models.cluster.ids, num.of.mcc.classes))
+```
+
+Next result we get is the **average activity differences** per network node for all group classifications:
+```{r mcc-analysis-5}
+mcc.analysis.res$diff.state.mcc.mat %>%
+  as.data.frame() %>%
+  select(c("AKT","PPM1A","PTEN","PSEN1","PTK2","CEBPA")) %>% # show only part of the matrix
+  kable(caption = "Average Activity Difference Matrix")
+```
+
+- Rows represent the different classification group matchings, e.g. (1,2) means the models that were in the 1st MCC class vs the models that were in the 2nd MCC class.
+- All values are in the $[-1,1]$ interval. 
+The more negative the activity difference value, the more inhibited the node is in the better performance models (e.g. `PTK2`). 
+The more positive the activity difference value, the more active the node is in the better performance models (e.g. `PPM1A,PTEN`).
+- Based on a **user-given** `threshold` level, a node is declared as an **activity biomarker** if it’s highest absolute value surpasses that threshold (see `emba::get_biomarkers()` for more info).
+
+In our case, `threshold = 0.65` and thus `PTEN` and `PPM1A` are returned as active biomarkers and `PTK2` as an inhibited biomarker:
+```{r mcc-analysis-6, results='asis'}
+usefun::pretty_print_vector_values(mcc.analysis.res$biomarkers.mcc.active,
+  vector.values.str = "active biomarkers")
+usefun::pretty_print_vector_values(mcc.analysis.res$biomarkers.mcc.inhibited,
+  vector.values.str = "inhibited biomarkers")
+```
+
+Note that looking at the respective boolean equations:
+
+- `PPM1A = PTEN`
+- `PTK2 = not PTEN`
+
+we conclude that **the only activity biomarker of interest** is `PTEN` as it's the only regulator whose state directly influences the `PPM1A` and `PTK2` nodes.
+
+With the models initial network as an [igraph](https://igraph.org/r/) object (see `emba::construct_network()` on how to create such a `net` object), we can visualize every row of the above matrix as follows:
+```{r mcc-analysis-7, fig.align='center', fig.width=7, fig.height=5.5}
+pr(emba::plot_avg_state_diff_graph(net, mcc.analysis.res$diff.state.mcc.mat["(1,4)",], 
+  layout = nice.layout, title = "Bad models (MCC Class 1) vs Good models (MCC Class 4)"))
+```
+
+Last result we get is the **average link operator differences** per network node (whose boolean equation had a link operator) for all group classifications:
+```{r mcc-analysis-8}
+mcc.analysis.res$diff.link.mcc.mat %>% 
+  as.data.frame() %>%
+  select(c("AKT","PTEN","PSEN1","CEBPA","STAT3","JAK1")) %>% # show only part of the matrix
+  kable(caption = "Average Link Operator Difference Matrix")
+```
+
+- Rows again represent the different classification group matchings, e.g. (1,2) means the models that were in the 1st MCC class vs the models that were in the 2nd MCC class.
+- All values are in the $[-1,1]$ interval.
+A value closer to $-1$ means that on average, the node's boolean equation has the *AND NOT* link operator in the better performance models (e.g. `STAT3` node).
+A value closer to $1$ means that on average, the node's boolean equation has mostly the *OR NOT* link operator in the better performance models (e.g. `PTEN` node).
+- Based on the given `threshold` level, a node is declared as a **link operator biomarker** if it's highest absolute value surpasses that threshold (see `emba::get_biomarkers()` for more info).
+
+In our case, `threshold = 0.65` and thus `PTEN` is returned as an `OR` link operator biomarker:
+```{r mcc-analysis-9, results='asis'}
+usefun::pretty_print_vector_values(mcc.analysis.res$biomarkers.mcc.or,
+  vector.values.str = "'OR' biomarkers")
+usefun::pretty_print_vector_values(mcc.analysis.res$biomarkers.mcc.and,
+  vector.values.str = "'AND' biomarkers")
+```
+
+We can also visualize every row of the average link operator differences matrix as in the following example:
+```{r mcc-analysis-10, fig.align='center', fig.width=7, fig.height=5.5}
+pr(emba::plot_avg_link_operator_diff_graph(net, mcc.analysis.res$diff.link.mcc.mat["(1,4)",], 
+  layout = nice.layout, title = "Bad models (MCC Class 1) vs Good models (MCC Class 4)"))
+```
+
+## Comparing the 2 methods
+
+Overall, we note that **using the more robust MCC score** to classify the models according to their prediction performance on the drug combination dataset they were tested on, **produces more reliable biomarkers** compared to using the simple number of true positive predictions.
+In addition, the biomarker results are different between the 2 methods, e.g. the TP-analysis revealed `CEBPA` as an active state performance biomarker whereas the MCC-based analysis showed `PTEN` to be so.
+
+# Synergy biomarkers
+
+*Synergy* biomarkers are nodes in our studied networks (boolean models) whose activity state and/or boolean model parameterization (link operator) affects the manifestation of synergies.
+These nodes can be thus used as indicators of either *activity* or *structural* changes that make the models **predict specific drug combinations as synergistic**.
+
+The core idea behind the implementation is that the models are now classified to groups based on whether they **predict or not each one of the predicted synergies** (which for the test dataset are the same 5 as found with the previous analyses).
+Thus, by comparing the average node activity or boolean model parameterization from the group that predicted a drug combination as a **synergy** vs the group that predicted it to be an **antagonism**, we can derive biomarkers for that drug combination.
+
+The function used to perform such an analysis is the `emba::biomarker_tp_analysis()`:
+
+```{r synergy-analysis-1}
+synergy.analysis.res = emba::biomarker_synergy_analysis(
+  model.predictions,
+  models.stable.state,
+  models.link.operator,
+  observed.synergies,
+  threshold = 0.5,
+  calculate.subsets.stats = TRUE,
+  penalty = 0.1)
+```
+
+---
+
+Now in addition to the predicted synergies set, we get all the **subsets** for which a model predicted all drug combinations in that subset as *synergistic*.
+We can visualize this result with the `emba::make_barplot_on_synergy_subset_stats()` function:
+```{r synergy-analysis-2, fig.align='center', fig.width=7, fig.height=5.5}
+pr(emba::make_barplot_on_synergy_subset_stats(
+  synergy.analysis.res$synergy.subset.stats,
+  threshold.for.subset.removal = 1, 
+  bottom.mar = 9))
+```
+
+- Almost half of the models ($3478$) predict none of the *gold standard* synergies
+- The `PI-D1` synergy is predicted by almost all the rest of the models
+- There were only $2$ models that predicted $3$ gold standard synergies, i.e. the set `BI-PD,PD-PI,PI-D1` which is the maximum number of predicted synergies by an individual model
+
+Next result is the matrix of *activity state differences* vectors, one for each of the predicted synergies:
+```{r synergy-analysis-3, fig.align='center', fig.width=7, fig.height=5}
+synergy.analysis.res$diff.state.synergies.mat[,1:8] %>% 
+  kable(caption = "Average State Differences per Synergy Predicted", digits = 3)
+```
+
+- Every row refers to a different predicted synergy in the dataset. 
+The columns are the network nodes.
+- Every row is the result of **comparing two model groups**: the *synergistic group* (models that predicted the row-annotated drug combination as **synergistic**) vs the *antagonistic group* (models that predicted the row-annotated drug combination as **antagonistic**).
+- All values are in the $[−1,1]$ interval.
+The more negative (positive) the activity difference value, the more inhibited (active) the node is in the synergistic model group.
+- Based on a **user-given** `threshold` level, a node for a specific synergy is declared as an **activity biomarker** if it’s highest absolute value surpasses that threshold (see `emba::get_biomarkers()` for more info).
+
+Every row of the above matrix can be also network-plotted.
+We show for example the average state difference graph for the `PI-D1` synergy:
+```{r synergy-analysis-4, fig.align='center', fig.width=7, fig.height=5.5}
+pr(emba::plot_avg_state_diff_graph(net,
+  synergy.analysis.res$diff.state.synergies.mat["PI-D1",],
+  layout = nice.layout, title = "Prediction of PI-D1 (Good Models: synergy, Bad Models: antagonism)"))
+```
+
+Given the **user-defined** `threshold` ($0.5$) we also get as a result the activity state biomarkers:
+```{r synergy-analysis-5, fig.align='center', fig.width=7, fig.height=5}
+# prune nodes (columns) that were not found as biomarkers for any predicted synergy
+biomarker.act.mat = usefun::prune_columns_from_df(
+  df = synergy.analysis.res$activity.biomarkers, value = 0)
+
+biomarker.act.mat[, 4:12] %>% # show only part of the matrix
+  kable(caption = "Activity State Biomarkers Per Synergy Predicted")
+```
+
+- In the above matrix, $1$ means *active state biomarker*, $-1$ *inhibited state biomarker* and $0$ means not a biomarker.
+- Using the following code, you can filter and derive your own activity biomarkers matrix:
+```{r, eval = FALSE}
+# define your own threshold
+my.thres = 0.76
+activity.biomarkers.new = as.data.frame(apply(
+  synergy.analysis.res$diff.state.synergies.mat, c(1,2), 
+  usefun::get_ternary_class_id, my.thres))
+```
+
+Note that there were predicted synergies (rows in the above matrix), for which we couldn't find activity biomarkers (row was all zeros).
+This is justifiable, since **the number of models in the synergistic and antagonistic model groups can be fairly unbalanced** and the `penalty` term is used to correct this bias.
+For example, comparing the models that predict `AK-PD` as synergistic vs those that predict it as antagonistic, we have:
+
+```{r synergy-analysis-6, results='asis'}
+drug.comb = "AK-PD"
+
+syn.models.num = sum(model.predictions[, drug.comb] == 1 & !is.na(model.predictions[, drug.comb]))
+ant.models.num  = sum(model.predictions[, drug.comb] == 0 & !is.na(model.predictions[, drug.comb]))
+
+usefun::pretty_print_string(paste0("Number of models (AK-PD): #Synergistic: ", syn.models.num, ", #Antagonistic: ", ant.models.num))
+```
+
+Lastly, the `synergy.analysis.res$diff.link.synergies.mat` result is a matrix that contains the **average link operator differences** per network node (whose boolean equation had a link operator) when comparing the synergistic vs antagonistic model groups for each predicted synergy.
+The corresponding **link operator biomarkers** (based on the given `threshold`) are given in the `synergy.analysis.res$link.operator.biomarkers` output.
+
+# R Session Info
+
+```{r r-session-info, comment=""}
+sessionInfo()
+```

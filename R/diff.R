@@ -1,20 +1,27 @@
 #' Get average activity difference matrix based on the number of true positives
 #'
-#' This function finds all the TP values of the models given (e.g. 0,1,2,3),
+#' This function finds all the TP values of the models given (e.g. 0,1,2,3) and
 #' generates every pairwise combination (e.g. the group matchings: (0,1), (1,3),
-#' etc.) and uses the \code{\link{get_avg_activity_diff_based_on_tp_predictions}}
+#' etc.). Then, it uses the \code{\link{get_avg_activity_diff_based_on_tp_predictions}}
 #' function on each generated classification group matching, comparing thus all
-#' groups of models with different true positive (TP) values.
+#' groups of models with different true positive (TP) values, while taking into
+#' account the given \code{penalty} factor and the number of models in each
+#' respective model group.
 #'
-#' @param models character vector. The model names.
 #' @param models.synergies.tp an integer vector of TP values. The \emph{names}
-#' attribute holds the models' names and have to be in the same order as in the
-#' \code{models} parameter.
-#' @param models.stable.state a matrix (nxm) with n models and m nodes. The row
-#' names of the matrix specify the models' names (same order as in the \code{models}
-#' parameter) whereas the column names specify the name of the network nodes
+#' attribute must hold the models' names. Consider using the function
+#' \code{\link{calculate_models_synergies_tp}}.
+#' @param models.stable.state a \code{data.frame} (nxm) with n models and m nodes. The row
+#' names specify the models' names (same order as in the \code{models.synergies.tp}
+#' parameter) whereas the column names specify the network nodes
 #' (gene, proteins, etc.). Possible values for each \emph{model-node element}
-#' are either \emph{0} (inactive node) or \emph{1} (active node).
+#' can be between \emph{0} (inactive node) and \emph{1} (active node) inclusive.
+#' @param penalty value between 0 and 1 (inclusive). A value of 0 means no
+#' penalty and a value of 1 is the strickest possible penalty. Default value is 0.
+#' This penalty is used as part of a weighted term to the difference in a value of
+#' interest (e.g. activity or link operator difference) between two group of
+#' models, to account for the difference in the number of models from each
+#' respective model group.
 #'
 #' @return a matrix whose rows are \strong{vectors of
 #' average node activity state differences} between two groups of models where
@@ -26,10 +33,13 @@
 #'
 #' @family average data difference functions
 #'
+#' @seealso
+#' \code{\link{get_vector_diff}}
+#'
 #' @importFrom utils combn
 #' @export
 get_avg_activity_diff_mat_based_on_tp_predictions =
-  function(models, models.synergies.tp, models.stable.state) {
+  function(models.synergies.tp, models.stable.state, penalty = 0) {
     # check
     stopifnot(all(names(models.synergies.tp) == rownames(models.stable.state)))
 
@@ -38,8 +48,8 @@ get_avg_activity_diff_mat_based_on_tp_predictions =
 
     diff.tp.mat = apply(tp.values.comb, 1, function(comb) {
       return(get_avg_activity_diff_based_on_tp_predictions(
-        models, models.synergies.tp, models.stable.state,
-        num.low = comb[1], num.high = comb[2]))
+        models.synergies.tp, models.stable.state,
+        num.low = comb[1], num.high = comb[2], penalty))
     })
 
     tp.comb.names = apply(tp.values.comb, 1, function(row) {
@@ -59,16 +69,22 @@ get_avg_activity_diff_mat_based_on_tp_predictions =
 #' have the same data format (rows represent models, columns represent nodes,
 #' and each value is a number in the [0,1] interval).
 #'
-#' @param models character vector. The model names.
 #' @param models.synergies.tp an integer vector of TP values. The \emph{names}
-#' attribute holds the models' names and have to be in the same order as in the
-#' \code{models} parameter.
-#' @param models.link.operator matrix (nxm) with n models and m nodes. The row names of the matrix
-#' specify the models' names whereas the column names specify the name of the
-#' network nodes (gene, proteins, etc.). Possible values for each \emph{model-node
+#' attribute must hold the models' names. Consider using the function
+#' \code{\link{calculate_models_synergies_tp}}.
+#' @param models.link.operator a \code{data.frame} (nxm) with n models and m nodes.
+#' The row names specify the models' names (same order as in the \code{models.synergies.tp}
+#' parameter) whereas the column names specify the network nodes (gene, proteins, etc.).
+#' Possible values for each \emph{model-node
 #' element} are either \emph{0} (\strong{AND NOT} link operator), \emph{1}
 #' (\strong{OR NOT} link operator) or \emph{0.5} if the node is not targeted by
 #' both activating and inhibiting regulators (no link operator).
+#' @param penalty value between 0 and 1 (inclusive). A value of 0 means no
+#' penalty and a value of 1 is the strickest possible penalty. Default value is 0.
+#' This penalty is used as part of a weighted term to the difference in a value of
+#' interest (e.g. activity or link operator difference) between two group of
+#' models, to account for the difference in the number of models from each
+#' respective model group.
 #'
 #' @return a matrix whose rows are \strong{vectors of average node link operator
 #' differences} between two groups of models based on some kind of classification
@@ -94,12 +110,15 @@ get_avg_activity_diff_mat_based_on_tp_predictions =
 #' in model performance.
 #'
 #' @family average data difference functions
+#'
+#' @seealso
+#' \code{\link{get_vector_diff}}
+#'
 #' @export
 get_avg_link_operator_diff_mat_based_on_tp_predictions =
-  function(models, models.synergies.tp, models.link.operator) {
+  function(models.synergies.tp, models.link.operator, penalty = 0) {
     get_avg_activity_diff_mat_based_on_tp_predictions(
-      models, models.synergies.tp, models.stable.state = models.link.operator
-    )
+      models.synergies.tp, models.stable.state = models.link.operator, penalty)
   }
 
 #' Get the average activity difference based on the number of true positives
@@ -108,21 +127,28 @@ get_avg_link_operator_diff_mat_based_on_tp_predictions =
 #' positive predictions: \emph{num.high} TPs (good) vs \emph{num.low} TPs (bad).
 #' Then, for each network node, it finds the node's average activity in each of
 #' the two classes (a value in the [0,1] interval) and then subtracts the
-#' 'bad' average activity value from the good' one.
+#' 'bad' average activity value from the good' one, taking into account the
+#' given \code{penalty} factor and the number of models in each respective
+#' model group.
 #'
-#' @param models character vector. The model names.
 #' @param models.synergies.tp an integer vector of TP values. The \emph{names}
-#' attribute holds the models' names and have to be in the same order as in the
-#' \code{models} parameter.
-#' @param models.stable.state a matrix (nxm) with n models and m nodes. The row
-#' names of the matrix specify the models' names (same order as in the \code{models}
-#' parameter) whereas the column names specify the name of the network nodes
+#' attribute holds the models' names and must be a subset of the row names
+#' of the \code{models.stable.state} parameter. Consider using the function
+#' \code{\link{calculate_models_synergies_tp}}.
+#' @param models.stable.state a \code{data.frame} (nxm) with n models and m nodes. The row
+#' names specify the models' names whereas the column names specify the network nodes
 #' (gene, proteins, etc.). Possible values for each \emph{model-node element}
-#' are either \emph{0} (inactive node) or \emph{1} (active node).
+#' can be between \emph{0} (inactive node) and \emph{1} (active node) inclusive.
 #' @param num.low integer. The number of true positives representing the 'bad'
 #' model class.
 #' @param num.high integer. The number of true positives representing the 'good'
 #' model class. This number has to be strictly higher than \code{num.low}.
+#' @param penalty value between 0 and 1 (inclusive). A value of 0 means no
+#' penalty and a value of 1 is the strickest possible penalty. Default value is 0.
+#' This penalty is used as part of a weighted term to the difference in a value of
+#' interest (e.g. activity or link operator difference) between two group of
+#' models, to account for the difference in the number of models from each
+#' respective model group.
 #'
 #' @return a numeric vector with values in the [-1,1] interval (minimum and maximum
 #' possible average difference) and with the \emph{names} attribute representing the name
@@ -138,15 +164,19 @@ get_avg_link_operator_diff_mat_based_on_tp_predictions =
 #' performance (higher number of true positives) in the good models.
 #'
 #' @family average data difference functions
+#'
+#' @seealso
+#' \code{\link{get_vector_diff}}
+#'
 #' @export
 get_avg_activity_diff_based_on_tp_predictions =
-  function(models, models.synergies.tp, models.stable.state, num.low, num.high) {
+  function(models.synergies.tp, models.stable.state, num.low, num.high, penalty = 0) {
     if (num.low >= num.high) {
       stop("`num.low` needs to be smaller than `num.high`")
     }
 
-    good.models = models[models.synergies.tp == num.high]
-    bad.models  = models[models.synergies.tp == num.low]
+    good.models = names(models.synergies.tp)[models.synergies.tp == num.high]
+    bad.models  = names(models.synergies.tp)[models.synergies.tp == num.low]
 
     # `good.models` != `bad.models` (disjoing sets of models)
     stopifnot(!(good.models %in% bad.models))
@@ -155,50 +185,49 @@ get_avg_activity_diff_based_on_tp_predictions =
     stopifnot(length(good.models) > 0, length(bad.models) > 0)
 
     if (length(good.models) == 1) {
-      warning( "Only 1 \'good\' model in TP class: ", num.high, " - very biased analysis\n")
-      good.avg.activity = models.stable.state[good.models, ]
-    } else {
-      good.avg.activity = apply(models.stable.state[good.models, ], 2, mean)
+      warning("Only 1 \'good\' model in TP class: ", num.high, " - very biased analysis\n")
     }
 
     if (length(bad.models) == 1) {
-      warning(paste0("Only 1 \'bad\' model in TP class: ", num.low, " - very biased analysis\n"))
-      bad.avg.activity = models.stable.state[bad.models, ]
-    } else {
-      bad.avg.activity = apply(models.stable.state[bad.models, ], 2, mean)
+      warning("Only 1 \'bad\' model in TP class: ", num.low, " - very biased analysis\n")
     }
 
-    return(good.avg.activity - bad.avg.activity)
+    good.avg.activity = apply(models.stable.state[good.models, ], 2, mean)
+    bad.avg.activity = apply(models.stable.state[bad.models, ], 2, mean)
+
+    get_vector_diff(vec1 = good.avg.activity, vec2 = bad.avg.activity,
+      m1 = length(good.models), m2 = length(bad.models), penalty)
   }
 
 #' Get average activity difference matrix based on MCC clustering
 #'
 #' This function splits the Matthews correlation coefficient (MCC) scores
 #' of the models to specific groups using the \pkg{Ckmeans.1d.dp}
-#' package for the clustering (groups are denoted by ids, e.g. NaN,1,2,3, etc.
+#' package (groups are denoted by ids, e.g. 1,2,3, etc.
 #' where a larger id corresponds to a group of models with higher MCC scores)
 #' and for each pairwise
 #' combination of group id matchings (e.g. (0,1), (1,3), etc.), it uses the
 #' \code{\link{get_avg_activity_diff_based_on_mcc_clustering}}
 #' function, comparing thus all groups of models that belong to different
-#' MCC classes.
+#' MCC classes while taking into account the given \code{penalty} factor and the
+#' number of models in each respective model MCC group.
 #'
 #' @param models.mcc a numeric vector of Matthews Correlation Coefficient (MCC)
 #' scores, one for each model. The \emph{names} attribute holds the models' names.
 #' Can be the result of using the function \code{\link{calculate_models_mcc}}.
-#' @param models.stable.state a matrix (nxm) with n models and m nodes. The row
-#' names of the matrix specify the models' names (same order as in the \code{models.mcc}
-#' parameter) whereas the column names specify the name of the network nodes
+#' @param models.stable.state a \code{data.frame} (nxm) with n models and m nodes. The row
+#' names specify the models' names whereas the column names specify the network nodes
 #' (gene, proteins, etc.). Possible values for each \emph{model-node element}
-#' are either \emph{0} (inactive node) or \emph{1} (active node).
+#' can be between \emph{0} (inactive node) and \emph{1} (active node) inclusive.
 #' @param num.of.mcc.classes numeric. A positive integer larger than 2 that
 #' signifies the number of mcc classes (groups) that we should split the models
-#' MCC values (excluding the 'NaN' values).
-#' @param include.NaN.mcc.class logical. Should the models that have NaN MCC value
-#' (e.g. TP+FP = 0, models that predicted no synergies at all) be classified together
-#' in one class - the 'NaN MCC Class' - and compared with the other model classes
-#' in the analysis? If \emph{TRUE}, then the number of total MCC classes will be
-#' \emph{num.of.mcc.classes + 1}.
+#' MCC values.
+#' @param penalty value between 0 and 1 (inclusive). A value of 0 means no
+#' penalty and a value of 1 is the strickest possible penalty. Default value is 0.
+#' This penalty is used as part of a weighted term to the difference in a value of
+#' interest (e.g. activity or link operator difference) between two group of
+#' models, to account for the difference in the number of models from each
+#' respective model group.
 #'
 #' @return a matrix whose rows are \strong{vectors of
 #' average node activity state differences} between two groups of models where
@@ -210,24 +239,19 @@ get_avg_activity_diff_based_on_tp_predictions =
 #'
 #' @family average data difference functions
 #'
+#' @seealso
+#' \code{\link{get_vector_diff}}
+#'
 #' @importFrom Ckmeans.1d.dp Ckmeans.1d.dp
 #' @export
 get_avg_activity_diff_mat_based_on_mcc_clustering =
-  function(models.mcc, models.stable.state, num.of.mcc.classes, include.NaN.mcc.class) {
+  function(models.mcc, models.stable.state, num.of.mcc.classes, penalty = 0) {
     stopifnot(num.of.mcc.classes >= 2)
     mcc.class.ids = 1:num.of.mcc.classes
 
-    models.mcc.no.nan = models.mcc[!is.nan(models.mcc)]
-    models.mcc.no.nan.sorted = sort(models.mcc.no.nan)
-
     # find the clusters
-    res = Ckmeans.1d.dp(x = models.mcc.no.nan.sorted, k = num.of.mcc.classes)
+    res = Ckmeans.1d.dp(x = models.mcc, k = num.of.mcc.classes)
     models.cluster.ids = res$cluster
-
-    # add NaN class (if applicable)
-    if (include.NaN.mcc.class & (sum(is.nan(models.mcc)) > 0)) {
-      mcc.class.ids = append(mcc.class.ids, values = NaN, after = 0)
-    }
 
     mcc.class.id.comb = t(combn(1:length(mcc.class.ids), 2))
 
@@ -235,7 +259,7 @@ get_avg_activity_diff_mat_based_on_mcc_clustering =
       return(get_avg_activity_diff_based_on_mcc_clustering(
         models.mcc, models.stable.state,
         mcc.class.ids, models.cluster.ids,
-        class.id.low = comb[1], class.id.high = comb[2]))
+        class.id.low = comb[1], class.id.high = comb[2], penalty))
     })
 
     mcc.classes.comb.names = apply(mcc.class.id.comb, 1, function(comb) {
@@ -259,21 +283,22 @@ get_avg_activity_diff_mat_based_on_mcc_clustering =
 #' @param models.mcc a numeric vector of Matthews Correlation Coefficient (MCC)
 #' scores, one for each model. The \emph{names} attribute holds the models' names.
 #' Can be the result of using the function \code{\link{calculate_models_mcc}}.
-#' @param models.link.operator matrix (nxm) with n models and m nodes. The row
-#' names of the matrix specify the models' names (same order as in the
-#' \code{models.mcc} parameter) whereas the column names specify the name of the
+#' @param models.link.operator a \code{data.frame} (nxm) with n models and m nodes.
+#' The row names specify the models' names (same order as in the
+#' \code{models.mcc} parameter) whereas the column names specify the
 #' network nodes (gene, proteins, etc.). Possible values for each \emph{model-node
 #' element} are either \emph{0} (\strong{AND NOT} link operator), \emph{1}
 #' (\strong{OR NOT} link operator) or \emph{0.5} if the node is not targeted by
 #' both activating and inhibiting regulators (no link operator).
 #' @param num.of.mcc.classes numeric. A positive integer larger than 2 that
 #' signifies the number of mcc classes (groups) that we should split the models
-#' MCC values (excluding the 'NaN' values).
-#' @param include.NaN.mcc.class logical. Should the models that have NaN MCC value
-#' (e.g. TP+FP = 0, models that predicted no synergies at all) be classified together
-#' in one class - the 'NaN MCC Class' - and compared with the other model classes
-#' in the analysis? If \emph{TRUE}, then the number of total MCC classes will be
-#' \emph{num.of.mcc.classes + 1}.
+#' MCC values.
+#' @param penalty value between 0 and 1 (inclusive). A value of 0 means no
+#' penalty and a value of 1 is the strickest possible penalty. Default value is 0.
+#' This penalty is used as part of a weighted term to the difference in a value of
+#' interest (e.g. activity or link operator difference) between two group of
+#' models, to account for the difference in the number of models from each
+#' respective model group.
 #'
 #' @return a matrix whose rows are \strong{vectors of average node link operator
 #' differences} between two groups of models where
@@ -298,13 +323,16 @@ get_avg_activity_diff_mat_based_on_mcc_clustering =
 #' in model performance.
 #'
 #' @family average data difference functions
+#'
+#' @seealso
+#' \code{\link{get_vector_diff}}
+#'
 #' @export
 get_avg_link_operator_diff_mat_based_on_mcc_clustering =
-  function(models.mcc, models.link.operator, num.of.mcc.classes, include.NaN.mcc.class) {
+  function(models.mcc, models.link.operator, num.of.mcc.classes, penalty = 0) {
     get_avg_activity_diff_mat_based_on_mcc_clustering(
       models.mcc, models.stable.state = models.link.operator,
-      num.of.mcc.classes, include.NaN.mcc.class
-    )
+      num.of.mcc.classes, penalty)
   }
 
 #' Get the average activity difference based on MCC clustering
@@ -315,26 +343,31 @@ get_avg_link_operator_diff_mat_based_on_mcc_clustering =
 #' the lower MCC values (bad model group). Then, for each network node, the function
 #' finds the node's average activity in each of the two classes (a value in
 #' the [0,1] interval) and then subtracts the bad class average activity value from
-#' the good one.
+#' the good one, taking into account the given \code{penalty} factor and the
+#' number of models in each respective model group.
 #'
 #' @param models.mcc a numeric vector of Matthews Correlation Coefficient (MCC)
 #' scores, one for each model. The \emph{names} attribute holds the models' names.
 #' Can be the result of using the function \code{\link{calculate_models_mcc}}.
-#' @param models.stable.state a matrix (nxm) with n models and m nodes. The row
-#' names of the matrix specify the models' names (same order as in the \code{models.mcc}
-#' parameter) whereas the column names specify the name of the network nodes
+#' @param models.stable.state a \code{data.frame} (nxm) with n models and m nodes. The row
+#' names specify the models' names whereas the column names specify the network nodes
 #' (gene, proteins, etc.). Possible values for each \emph{model-node element}
-#' are either \emph{0} (inactive node) or \emph{1} (active node).
-#' @param mcc.class.ids a numeric vector of group/class ids starting from NaN if
-#' models with NaN MCC score are included or 1 otherwise. E.g. c(1,2,3), where
-#' we have 3 MCC classes and no NaN values.
+#' can be between \emph{0} (inactive node) and \emph{1} (active node) inclusive.
+#' @param mcc.class.ids a numeric vector of group/class ids starting from 1,
+#' e.g. \code{c(1,2,3)} (3 MCC classes).
 #' @param models.cluster.ids a numeric vector of cluster ids assigned to each
 #' model. It is the result of using \code{\link[Ckmeans.1d.dp]{Ckmeans.1d.dp}}
-#' with input the sorted vector of the models' MCC values with no NaNs included.
+#' with input the vector of the models' MCC values.
 #' @param class.id.low integer. This number specifies the MCC class id of the
 #' 'bad' models.
 #' @param class.id.high integer. This number specifies the MCC class id of the
 #' 'good' models and needs to be strictly higher than \code{class.id.low}.
+#' @param penalty value between 0 and 1 (inclusive). A value of 0 means no
+#' penalty and a value of 1 is the strickest possible penalty. Default value is 0.
+#' This penalty is used as part of a weighted term to the difference in a value of
+#' interest (e.g. activity or link operator difference) between two group of
+#' models, to account for the difference in the number of models from each
+#' respective model group.
 #'
 #' @return a numeric vector with values in the [-1,1] interval (minimum and maximum
 #' possible average difference) and with the \emph{names} attribute representing the name
@@ -350,35 +383,28 @@ get_avg_link_operator_diff_mat_based_on_mcc_clustering =
 #' performance (higher MCC score/class) in the good models.
 #'
 #' @family average data difference functions
+#'
+#' @seealso
+#' \code{\link{get_vector_diff}}
+#'
 #' @export
 get_avg_activity_diff_based_on_mcc_clustering =
   function(models.mcc, models.stable.state, mcc.class.ids, models.cluster.ids,
-           class.id.low, class.id.high) {
+           class.id.low, class.id.high, penalty = 0) {
     if (class.id.low >= class.id.high) {
       stop("`class.id.low` needs to be smaller than `class.id.high`")
     }
-
-    models.mcc.no.nan = models.mcc[!is.nan(models.mcc)]
-    models.mcc.no.nan.sorted = sort(models.mcc.no.nan)
 
     bad.class.id  = mcc.class.ids[class.id.low]
     good.class.id = mcc.class.ids[class.id.high]
 
     # find the 'good' models
-    good.models = get_models_based_on_mcc_class_id(
-      good.class.id, models.cluster.ids, models.mcc.no.nan.sorted
-    )
+    good.models = get_models_based_on_mcc_class_id(good.class.id,
+      models.cluster.ids, models.mcc)
 
     # find the 'bad' models
-    if (is.nan(bad.class.id)) {
-      # the `NaN` MCC scored models (can only be 'bad' ones)
-      bad.models = names(models.mcc)[is.nan(models.mcc)]
-    } else {
-      bad.models =
-        get_models_based_on_mcc_class_id(
-          bad.class.id, models.cluster.ids, models.mcc.no.nan.sorted
-        )
-    }
+    bad.models = get_models_based_on_mcc_class_id(bad.class.id,
+      models.cluster.ids, models.mcc)
 
     # `good.models` != `bad.models` (disjoing sets of models)
     stopifnot(!(good.models %in% bad.models))
@@ -387,20 +413,18 @@ get_avg_activity_diff_based_on_mcc_clustering =
     stopifnot(length(good.models) > 0, length(bad.models) > 0)
 
     if (length(good.models) == 1) {
-      warning(paste0("Only 1 \'good\' model in MCC class: ", class.id.high, " - very biased analysis\n"))
-      good.avg.activity = models.stable.state[good.models, ]
-    } else {
-      good.avg.activity = apply(models.stable.state[good.models, ], 2, mean)
+      warning("Only 1 \'good\' model in MCC class: ", class.id.high, " - very biased analysis\n")
     }
 
     if (length(bad.models) == 1) {
-      warning(paste0("Only 1 \'bad\' model in MCC class: ", class.id.low, " - very biased analysis\n"))
-      bad.avg.activity = models.stable.state[bad.models, ]
-    } else {
-      bad.avg.activity = apply(models.stable.state[bad.models, ], 2, mean)
+      warning("Only 1 \'bad\' model in MCC class: ", class.id.low, " - very biased analysis\n")
     }
 
-    return(good.avg.activity - bad.avg.activity)
+    good.avg.activity = apply(models.stable.state[good.models, ], 2, mean)
+    bad.avg.activity = apply(models.stable.state[bad.models, ], 2, mean)
+
+    get_vector_diff(vec1 = good.avg.activity, vec2 = bad.avg.activity,
+      m1 = length(good.models), m2 = length(bad.models), penalty)
   }
 
 #' Get models based on the MCC class id
@@ -411,9 +435,9 @@ get_avg_activity_diff_based_on_mcc_clustering =
 #' @param class.id an integer specifying the class id.
 #' @param models.cluster.ids a numeric vector of cluster ids assigned to each
 #' model. It is the result of using \code{\link[Ckmeans.1d.dp]{Ckmeans.1d.dp}}
-#' with input the sorted vector of the models' MCC values with no NaNs included.
+#' with input the sorted vector of the models' MCC values.
 #' @param models.mcc a numeric sorted vector of Matthews Correlation Coefficient (MCC)
-#' scores, one for each model (no NaNs included).
+#' scores, one for each model.
 #' The \emph{names} attribute holds the models' names.
 #'
 #' @return a character vector of model names
@@ -427,22 +451,27 @@ get_models_based_on_mcc_class_id =
 #' This function uses the \code{\link{get_avg_activity_diff_based_on_specific_synergy_prediction}}
 #' function on a vector of drug combinations that were observed as synergistic
 #' (e.g. by experiments) but also found as such by at least one of the models
-#' (these drug combinations are the \emph{predicted synergies}).
+#' (these drug combinations are the \code{predicted.synergies}).
 #'
 #' @param model.predictions a \code{data.frame} object with rows the models and
 #' columns the drug combinations. Possible values for each \emph{model-drug combination
 #' element} are either \emph{0} (no synergy predicted), \emph{1} (synergy was
 #' predicted) or \emph{NA} (couldn't find stable states in either the drug
 #' combination inhibited model or in any of the two single-drug inhibited models)
-#' @param models.stable.state a matrix (nxm) with n models and m nodes. The row
-#' names of the matrix specify the models' names
-#' whereas the column names specify the name of the network nodes
+#' @param models.stable.state a \code{data.frame} (nxm) with n models and m nodes. The row
+#' names specify the models' names whereas the column names specify the network nodes
 #' (gene, proteins, etc.). Possible values for each \emph{model-node element}
-#' are either \emph{0} (inactive node) or \emph{1} (active node).
+#' can be between \emph{0} (inactive node) and \emph{1} (active node) inclusive.
 #' @param predicted.synergies a character vector of the synergies (drug
 #' combination names) that were predicted by \strong{at least one} of the models
 #' in the dataset. It must be a subset of the column names (the drug combinations)
 #' of the \code{model.predictions} object.
+#' @param penalty value between 0 and 1 (inclusive). A value of 0 means no
+#' penalty and a value of 1 is the strickest possible penalty. Default value is 0.
+#' This penalty is used as part of a weighted term to the difference in a value of
+#' interest (e.g. activity or link operator difference) between two group of
+#' models, to account for the difference in the number of models from each
+#' respective model group.
 #'
 #' @return a matrix whose rows are \strong{vectors of
 #' average node activity state differences} between two groups of models where
@@ -452,15 +481,19 @@ get_models_based_on_mcc_class_id =
 #' represent the network's node names. Values are in the [-1,1] interval.
 #'
 #' @family average data difference functions
+#'
+#' @seealso
+#' \code{\link{get_vector_diff}}
+#'
 #' @export
 get_avg_activity_diff_mat_based_on_specific_synergy_prediction =
-  function(model.predictions, models.stable.state, predicted.synergies) {
+  function(model.predictions, models.stable.state, predicted.synergies, penalty = 0) {
     stopifnot(all(predicted.synergies %in% colnames(model.predictions)))
 
     diff.synergies.mat =
       sapply(predicted.synergies, function(drug.comb) {
         get_avg_activity_diff_based_on_specific_synergy_prediction(
-          model.predictions, models.stable.state, drug.comb)
+          model.predictions, models.stable.state, drug.comb, penalty)
       })
     diff.synergies.mat = t(diff.synergies.mat)
 
@@ -480,9 +513,9 @@ get_avg_activity_diff_mat_based_on_specific_synergy_prediction =
 #' element} are either \emph{0} (no synergy predicted), \emph{1} (synergy was
 #' predicted) or \emph{NA} (couldn't find stable states in either the drug
 #' combination inhibited model or in any of the two single-drug inhibited models)
-#' @param models.link.operator matrix (nxm) with n models and m nodes. The row
-#' names of the matrix specify the models' names (same order as in the
-#' \code{model.predictions} parameter) whereas the column names specify the name of the
+#' @param models.link.operator a \code{data.frame} (nxm) with n models and m nodes. The row
+#' names specify the models' names (same order as in the
+#' \code{model.predictions} parameter) whereas the column names specify the
 #' network nodes (gene, proteins, etc.). Possible values for each \emph{model-node
 #' element} are either \emph{0} (\strong{AND NOT} link operator), \emph{1}
 #' (\strong{OR NOT} link operator) or \emph{0.5} if the node is not targeted by
@@ -491,6 +524,12 @@ get_avg_activity_diff_mat_based_on_specific_synergy_prediction =
 #' combination names) that were predicted by \strong{at least one} of the models
 #' in the dataset. It must be a subset of the column names (the drug combinations)
 #' of the \code{model.predictions} object.
+#' @param penalty value between 0 and 1 (inclusive). A value of 0 means no
+#' penalty and a value of 1 is the strickest possible penalty. Default value is 0.
+#' This penalty is used as part of a weighted term to the difference in a value of
+#' interest (e.g. activity or link operator difference) between two group of
+#' models, to account for the difference in the number of models from each
+#' respective model group.
 #'
 #' @return a matrix whose rows are \strong{vectors of average node link operator
 #' differences} between two groups of models where the classification for each
@@ -514,12 +553,16 @@ get_avg_activity_diff_mat_based_on_specific_synergy_prediction =
 #' node with regard to the parameterization).
 #'
 #' @family average data difference functions
+#'
+#' @seealso
+#' \code{\link{get_vector_diff}}
+#'
 #' @export
 get_avg_link_operator_diff_mat_based_on_specific_synergy_prediction =
-  function(model.predictions, models.link.operator, predicted.synergies) {
+  function(model.predictions, models.link.operator, predicted.synergies, penalty = 0) {
     get_avg_activity_diff_mat_based_on_specific_synergy_prediction(
       model.predictions, models.stable.state = models.link.operator,
-      predicted.synergies)
+      predicted.synergies, penalty)
   }
 
 #' Get average activity difference based on specific synergy prediction
@@ -532,21 +575,27 @@ get_avg_link_operator_diff_mat_based_on_specific_synergy_prediction =
 #' \emph{NA} are excluded from the analysis. Then, for each network node, the
 #' function finds the node's average activity in each of the two model groups (a
 #' value in the [0,1] interval) and then subtracts the bad group's average
-#' activity value from the good one.
+#' activity value from the good one, taking into account the given \code{penalty}
+#' factor and the number of models in each respective model group.
 #'
 #' @param model.predictions a \code{data.frame} object with rows the models and
 #' columns the drug combinations. Possible values for each \emph{model-drug combination
 #' element} are either \emph{0} (no synergy predicted), \emph{1} (synergy was
 #' predicted) or \emph{NA} (couldn't find stable states in either the drug
 #' combination inhibited model or in any of the two single-drug inhibited models)
-#' @param models.stable.state a matrix (nxm) with n models and m nodes. The row
-#' names of the matrix specify the models' names
-#' whereas the column names specify the name of the network nodes
+#' @param models.stable.state a \code{data.frame} (nxm) with n models and m nodes. The row
+#' names specify the models' names whereas the column names specify the network nodes
 #' (gene, proteins, etc.). Possible values for each \emph{model-node element}
-#' are either \emph{0} (inactive node) or \emph{1} (active node).
+#' can be between \emph{0} (inactive node) and \emph{1} (active node) inclusive.
 #' @param drug.comb string. The drug combination which will be used to split
 #' the models. It must be included in the column names of the \code{model.predictions}
 #' object.
+#' @param penalty value between 0 and 1 (inclusive). A value of 0 means no
+#' penalty and a value of 1 is the strickest possible penalty. Default value is 0.
+#' This penalty is used as part of a weighted term to the difference in a value of
+#' interest (e.g. activity or link operator difference) between two group of
+#' models, to account for the difference in the number of models from each
+#' respective model group.
 #'
 #' @return a numeric vector with values in the [-1,1] interval (minimum and maximum
 #' possible average difference) and with the \emph{names} attribute representing
@@ -564,10 +613,13 @@ get_avg_link_operator_diff_mat_based_on_specific_synergy_prediction =
 #'
 #' @family average data difference functions
 #'
+#' @seealso
+#' \code{\link{get_vector_diff}}
+#'
 #' @importFrom usefun is_empty
 #' @export
 get_avg_activity_diff_based_on_specific_synergy_prediction =
-  function(model.predictions, models.stable.state, drug.comb) {
+  function(model.predictions, models.stable.state, drug.comb, penalty = 0) {
     stopifnot(drug.comb %in% colnames(model.predictions))
 
     good.models = rownames(model.predictions)[
@@ -582,75 +634,11 @@ get_avg_activity_diff_based_on_specific_synergy_prediction =
     stopifnot(!is_empty(bad.models))
     stopifnot(!is_empty(good.models))
 
-    if (length(good.models) == 1) {
-      good.avg.activity = models.stable.state[good.models, ]
-    } else {
-      good.avg.activity = apply(models.stable.state[good.models, ], 2, mean)
-    }
+    good.avg.activity = apply(models.stable.state[good.models, ], 2, mean)
+    bad.avg.activity = apply(models.stable.state[bad.models, ], 2, mean)
 
-    if (length(bad.models) == 1) {
-      bad.avg.activity = models.stable.state[bad.models, ]
-    } else {
-      bad.avg.activity = apply(models.stable.state[bad.models, ], 2, mean)
-    }
-
-    return(good.avg.activity - bad.avg.activity)
-  }
-
-#' Get average link operator difference based on specific synergy prediction
-#'
-#' Given a specific drug combination, this function uses the
-#' \code{\link{get_avg_activity_diff_based_on_specific_synergy_prediction}} to split
-#' the models to good (those that predicted that particular combination, i.e. found it
-#' as synergistic - a value of \emph{1} in the \code{model.predictions}) and
-#' bad (those that found it as non-synergistic - a value of \emph{0} in the
-#' \code{model.predictions}). The models whose predicted value for that synergy is marked as
-#' \emph{NA} are excluded from the analysis. Then, for each network node, the
-#' function finds the node's average link operator value in each of the two model
-#' groups (a value in the [0,1] interval) and then subtracts the bad group's
-#' average activity value from the good one.
-#'
-#' @param model.predictions a \code{data.frame} object with rows the models and
-#' columns the drug combinations. Possible values for each \emph{model-drug combination
-#' element} are either \emph{0} (no synergy predicted), \emph{1} (synergy was
-#' predicted) or \emph{NA} (couldn't find stable states in either the drug
-#' combination inhibited model or in any of the two single-drug inhibited models)
-#' @param models.link.operator matrix (nxm) with n models and m nodes. The row
-#' names of the matrix specify the models' names (same order as in the
-#' \code{model.predictions} parameter) whereas the column names specify the name of the
-#' network nodes (gene, proteins, etc.). Possible values for each \emph{model-node
-#' element} are either \emph{0} (\strong{AND NOT} link operator), \emph{1}
-#' (\strong{OR NOT} link operator) or \emph{0.5} if the node is not targeted by
-#' both activating and inhibiting regulators (no link operator).
-#' @param drug.comb string. The drug combination which will be used to split
-#' the models. It must be included in the column names of the \code{model.predictions}
-#' object.
-#'
-#' @return a numeric vector with values in the [-1,1] interval (minimum and maximum
-#' possible average difference) and with the \emph{names} attribute representing
-#' the name of the nodes.
-#'
-#' @section Details:
-#' So, if a node has a value close to -1 it means that on average,
-#' this node's boolean equation has the \strong{AND NOT} link operator
-#' in the models that predicted the specific drug combination given, whereas a
-#' value closer to 1 means that the node's boolean equation has mostly the
-#' \strong{OR NOT} link operator in these models. A value closer to 0 indicates
-#' that the link operator in the node's boolean equation is \strong{not so much different}
-#' between the models that predicted the given drug combination and those that did not,
-#' so it won't not be a node of interest when searching for potential link operator
-#' biomarkers for this synergy.
-#' A value exactly equal to 0 can also mean that this node didn't not have a link operator
-#' in its boolean equation, again making it a non-important indicator of link
-#' operator difference.
-#'
-#' @family average data difference functions
-#'
-#' @export
-get_avg_link_operator_diff_based_on_specific_synergy_prediction =
-  function(model.predictions, models.link.operator, drug.comb) {
-    get_avg_activity_diff_based_on_specific_synergy_prediction(
-      model.predictions, models.stable.state = models.link.operator, drug.comb)
+    get_vector_diff(vec1 = good.avg.activity, vec2 = bad.avg.activity,
+      m1 = length(good.models), m2 = length(bad.models), penalty)
   }
 
 #' Get the average activity difference based on the comparison of two synergy sets
@@ -662,7 +650,8 @@ get_avg_link_operator_diff_based_on_specific_synergy_prediction =
 #' \code{synergy.subset.str} (e.g. "A-B,B-C"). Then, for each network node,
 #' the function finds the node's average activity in each of the two classes
 #' (a value in the [0,1] interval) and then subtracts the bad class average
-#' activity value from the good one.
+#' activity value from the good one, taking into account the given \code{penalty}
+#' factor and the number of models in the 'good' and 'bad' class respectively.
 #'
 #' @param synergy.set.str a string of drug combinations, comma-separated. The
 #' number of the specified combinations must be larger than the ones defined
@@ -677,11 +666,16 @@ get_avg_link_operator_diff_based_on_specific_synergy_prediction =
 #' element} are either \emph{0} (no synergy predicted), \emph{1} (synergy was
 #' predicted) or \emph{NA} (couldn't find stable states in either the drug
 #' combination inhibited model or in any of the two single-drug inhibited models)
-#' @param models.stable.state a matrix (nxm) with n models and m nodes. The row
-#' names of the matrix specify the models' names
-#' whereas the column names specify the name of the network nodes
+#' @param models.stable.state a \code{data.frame} (nxm) with n models and m nodes. The row
+#' names specify the models' names whereas the column names specify the network nodes
 #' (gene, proteins, etc.). Possible values for each \emph{model-node element}
-#' are either \emph{0} (inactive node) or \emph{1} (active node).
+#' can be between \emph{0} (inactive node) and \emph{1} (active node) inclusive.
+#' @param penalty value between 0 and 1 (inclusive). A value of 0 means no
+#' penalty and a value of 1 is the strickest possible penalty. Default value is 0.
+#' This penalty is used as part of a weighted term to the difference in a value of
+#' interest (e.g. activity or link operator difference) between two group of
+#' models, to account for the difference in the number of models from each
+#' respective model group.
 #'
 #' @return a numeric vector with values in the [-1,1] interval (minimum and
 #' maximum possible average difference) and with the names attribute
@@ -697,16 +691,19 @@ get_avg_link_operator_diff_based_on_specific_synergy_prediction =
 #' performance of a model and make it predict the extra synergy(-ies).
 #' A value closer to 0 indicates that the activity of that
 #' node is \strong{not so much different} between the models that predicted the
-#' synergy set and those that predicted it's subset, so it won't not be a node
+#' synergy set and those that predicted it's subset, so it won't be a node
 #' of interest when searching for potential biomarkers for the extra synergy(-ies).
 #'
 #' @family average data difference functions
+#'
+#' @seealso
+#' \code{\link{get_vector_diff}}
 #'
 #' @importFrom usefun outersect is_empty
 #' @export
 get_avg_activity_diff_based_on_synergy_set_cmp =
   function(synergy.set.str, synergy.subset.str, model.predictions,
-           models.stable.state) {
+           models.stable.state, penalty = 0) {
 
     synergy.set = unlist(strsplit(synergy.set.str, split = ","))
     synergy.subset = unlist(strsplit(synergy.subset.str, split = ","))
@@ -717,16 +714,10 @@ get_avg_activity_diff_based_on_synergy_set_cmp =
     stopifnot(all(synergy.subset %in% synergy.set))
     stopifnot(all(synergy.set %in% colnames(model.predictions)))
 
-    # find models that predict the `synergy.set`
-    if (length(synergy.set) == 1) {
-      models.synergy.set = rownames(model.predictions)[
-        model.predictions[, synergy.set] == 1 &
-          !is.na(model.predictions[, synergy.set])]
-    } else {
-      models.synergy.set = rownames(model.predictions)[
-        apply(model.predictions[, synergy.set], 1,
-              function(x) all(x == 1 & !is.na(x)))]
-    }
+    # find models that predict the `synergy.set` (always more than 1 elements in the set)
+    models.synergy.set = rownames(model.predictions)[
+      apply(model.predictions[, synergy.set], 1,
+            function(x) all(x == 1 & !is.na(x)))]
 
     # find models that predict the `synergy.subset`
     if (length(synergy.subset) == 1) {
@@ -750,25 +741,16 @@ get_avg_activity_diff_based_on_synergy_set_cmp =
     stopifnot(!is_empty(bad.models))
     stopifnot(!is_empty(good.models))
 
-    if (length(good.models) == 1) {
-      good.avg.activity = models.stable.state[good.models, ]
-    } else {
-      good.avg.activity = apply(models.stable.state[good.models, ], 2, mean)
-    }
+    good.avg.activity = apply(models.stable.state[good.models, ], 2, mean)
+    bad.avg.activity  = apply(models.stable.state[bad.models, ], 2, mean)
 
-    if (length(bad.models) == 1) {
-      bad.avg.activity = models.stable.state[bad.models, ]
-    } else {
-      bad.avg.activity = apply(models.stable.state[bad.models, ], 2, mean)
-    }
-
-    return(good.avg.activity - bad.avg.activity)
-  }
-
+    get_vector_diff(vec1 = good.avg.activity, vec2 = bad.avg.activity,
+      m1 = length(good.models), m2 = length(bad.models), penalty)
+}
 
 #' Get the average link operator difference based on the comparison of two synergy sets
 #'
-#' This function uses the \code{\link{get_avg_link_operator_diff_based_on_synergy_set_cmp}}
+#' This function uses the \code{\link{get_avg_activity_diff_based_on_synergy_set_cmp}}
 #' which splits the models to 'good' and 'bad' based on the predictions
 #' of two different synergy sets, one of them being a subset of the other.
 #' The 'good' models are those that predict the \code{synergy.set.str}
@@ -776,7 +758,9 @@ get_avg_activity_diff_based_on_synergy_set_cmp =
 #' \code{synergy.subset.str} (e.g. "A-B,B-C"). Then, for each network node,
 #' the function finds the node's average link operator value in each of the two classes
 #' (a value in the [0,1] interval, 0 being \emph{AND NOT} and 1 being \emph{OR NOT})
-#' and then subtracts the bad class average link operator value from the good one.
+#' and then subtracts the bad class average link operator value from the good one,
+#' taking into account the given \code{penalty} factor and the number of models
+#' in the 'good' and 'bad' class respectively.
 #'
 #' @param synergy.set.str a string of drug combinations, comma-separated. The
 #' number of the specified combinations must be larger than the ones defined
@@ -791,12 +775,18 @@ get_avg_activity_diff_based_on_synergy_set_cmp =
 #' element} are either \emph{0} (no synergy predicted), \emph{1} (synergy was
 #' predicted) or \emph{NA} (couldn't find stable states in either the drug
 #' combination inhibited model or in any of the two single-drug inhibited models)
-#' @param models.link.operator matrix (nxm) with n models and m nodes. The row names of the matrix
-#' specify the models' names whereas the column names specify the name of the
+#' @param models.link.operator a \code{data.frame} (nxm) with n models and m nodes.
+#' The row names specify the models' names whereas the column names specify the
 #' network nodes (gene, proteins, etc.). Possible values for each \emph{model-node
 #' element} are either \emph{0} (\strong{AND NOT} link operator), \emph{1}
 #' (\strong{OR NOT} link operator) or \emph{0.5} if the node is not targeted by
 #' both activating and inhibiting regulators (no link operator).
+#' @param penalty value between 0 and 1 (inclusive). A value of 0 means no
+#' penalty and a value of 1 is the strickest possible penalty. Default value is 0.
+#' This penalty is used as part of a weighted term to the difference in a value of
+#' interest (e.g. activity or link operator difference) between two group of
+#' models, to account for the difference in the number of models from each
+#' respective model group.
 #'
 #' @return a numeric vector with values in the [-1,1] interval (minimum and
 #' maximum possible average difference) and with the names attribute
@@ -823,10 +813,55 @@ get_avg_activity_diff_based_on_synergy_set_cmp =
 #'
 #' @family average data difference functions
 #'
+#' @seealso
+#' \code{\link{get_vector_diff}}
+#'
 #' @export
-get_avg_link_operator_diff_based_on_synergy_set_cmp =
-  function(synergy.set.str, synergy.subset.str, model.predictions, models.link.operator) {
+get_avg_link_operator_diff_based_on_synergy_set_cmp = function(synergy.set.str,
+  synergy.subset.str, model.predictions, models.link.operator, penalty = 0) {
     get_avg_activity_diff_based_on_synergy_set_cmp(
       synergy.set.str, synergy.subset.str, model.predictions,
-      models.stable.state = models.link.operator)
+      models.stable.state = models.link.operator, penalty)
+}
+
+#' Calculate difference vector with penalty term
+#'
+#' This function calculates the difference between two given numeric vectors while
+#' adding a penalty term (weight) to account for the number of models/instances that
+#' each vector's values were calculated from. Thus, if the models/instances are
+#' disproportionate and a penalty is included, the difference vector's values will
+#' be changed accordingly to reflect that.
+#'
+#' @param vec1 numeric vector
+#' @param vec2 numeric vector
+#' @param m1 integer > 0
+#' @param m2 integer > 0
+#' @param penalty value between 0 and 1 (inclusive). A value of 0 means no
+#' penalty (\code{m1,m2} don't matter) and a value of 1 is the strickest possible
+#' penalty. Default value is 0.
+#'
+#' @return the vector of differences between the two given vectors based on the
+#' formula: \deqn{(vec1 - vec2) * w}, where \eqn{w = (min(m1,m2)/max(m1,m2))^p}
+#' and \eqn{p = penalty}.
+#'
+#' See also related \href{https://math.stackexchange.com/questions/3547139/formula-for-weighted-average-difference}{StackOverflow question}.
+#' If \code{vec1} has \code{names}, the returned vector will have the same names
+#' attribute as \code{vec1}.
+#'
+#' @export
+get_vector_diff = function(vec1, vec2, m1 = 1, m2 = 1, penalty = 0) {
+  stopifnot(penalty >= 0, penalty <= 1)
+  stopifnot(length(vec1) == length(vec2))
+
+  if (m1 < 1 | m2 < 1) {
+    message("m1 or m2 less than 1!")
+    m1 = 1
+    m2 = 1
   }
+
+  min.v = min(m1, m2)
+  max.v = max(m1, m2)
+
+  weight = (min.v/max.v) ^ penalty
+  return(weight * (vec1 - vec2))
+}

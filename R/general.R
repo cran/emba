@@ -12,16 +12,16 @@
 #' element} are either \emph{0} (no synergy predicted), \emph{1} (synergy was
 #' predicted) or \emph{NA} (couldn't find stable states in either the drug
 #' combination inhibited model or in any of the two single-drug inhibited models).
-#' @param models.stable.state a matrix (nxm) with n models and m nodes. The row
-#' names of the matrix specify the models' names whereas the column names
-#' specify the name of the network nodes (gene, proteins, etc.).
-#' Possible values for each \emph{model-node element}
-#' are either \emph{0} (inactive node) or \emph{1} (active node). Note that the
-#' rows (models) have to be in the same order as in the \code{model.predictions}
+#' @param models.stable.state a \code{data.frame} (nxm) with n models and m nodes.
+#' The row names specify the models' names whereas the column names specify the
+#' network nodes (gene, proteins, etc.). Possible values for each \emph{model-node element}
+#' can be between \emph{0} (inactive node) and \emph{1} (active node) inclusive.
+#' Note that the rows (models) have to be in the same order as in the \code{model.predictions}
 #' parameter.
-#' @param models.link.operator a matrix (nxm) with n models and m nodes. The row
-#' names of the matrix specify the models' names whereas the column names specify
-#' the name of the network nodes (gene, proteins, etc.). Possible values for each
+#' @param models.link.operator a \code{data.frame} (nxm) with n models and m nodes. The row
+#' names specify the models' names (same order as in the \code{model.predictions}
+#' parameter) whereas the column names specify
+#' the network nodes (gene, proteins, etc.). Possible values for each
 #' \emph{model-node element} are either \emph{0} (\strong{AND NOT} link operator),
 #' \emph{1} (\strong{OR NOT} link operator) or \emph{0.5} if the node is not targeted
 #' by both activating and inhibiting regulators (no link operator). Default value:
@@ -35,24 +35,18 @@
 #' below its negative value) a biomarker will be registered in the returned result.
 #' Values closer to 1 translate to a more strict threshold and thus less
 #' biomarkers are found.
-#' @param calculate.subsets.stats logical. If \emph{TRUE}, then the results will
-#' include a vector of integers, representing the number of models that predicted
-#' every subset of the given \code{observed.synergies} (where at least one model
-#' predicts every synergy in the subset). The default value is \emph{FALSE}, since
-#' the powerset of the predicted \code{observed.synergies} can be very large to compute.
+#' @param penalty value between 0 and 1 (inclusive). A value of 0 means no
+#' penalty and a value of 1 is the strickest possible penalty. Default value is 0.1.
+#' This penalty is used as part of a weighted term to the difference in a value of
+#' interest (e.g. activity or link operator difference) between two group of
+#' models, to account for the difference in the number of models from each
+#' respective model group.
 #'
 #' @return a list with various elements:
 #' \itemize{
-#'   \item \code{observed.model.predictions}: the part of the \code{model.predictions}
-#'   data that includes the \code{observed.synergies}.
-#'   \item \code{unobserved.model.predictions}: the complementary part of the
-#'   \code{model.predictions} data that does not include the \code{observed.synergies}
 #'   \item \code{predicted.synergies}: a character vector of the synergies (drug
 #'   combination names) that were predicted by \strong{at least one} of the models
 #'   in the dataset.
-#'   \item \code{synergy.subset.stats}: an integer vector with elements the number
-#'   of models the predicted each \strong{observed synergy subset} if the
-#'   \emph{calculate.subsets.stats} option is enabled.
 #'   \item \code{models.synergies.tp}: an integer vector of true positive (TP)
 #'   values, one for each model.
 #'   \item \code{diff.tp.mat}: a matrix whose rows are \strong{vectors of
@@ -89,11 +83,13 @@
 #' @export
 biomarker_tp_analysis =
   function(model.predictions, models.stable.state, models.link.operator = NULL,
-           observed.synergies, threshold, calculate.subsets.stats = FALSE) {
+           observed.synergies, threshold, penalty = 0.1) {
   # check input
   stopifnot(threshold >= 0 & threshold <= 1)
-  models = rownames(model.predictions)
-  stopifnot(all(models == rownames(models.stable.state)))
+  stopifnot(length(observed.synergies) > 0)
+  stopifnot(all(observed.synergies %in% colnames(model.predictions)))
+  stopifnot(all(rownames(model.predictions) == rownames(models.stable.state)))
+  stopifnot(all(models.stable.state >= 0, models.stable.state <= 1))
 
   # Split model.predictions to positive (observed) and negative (non-observed) results
   observed.model.predictions =
@@ -111,31 +107,20 @@ biomarker_tp_analysis =
   # check: the predicted synergies is a subset of the observed ones
   stopifnot(all(predicted.synergies %in% observed.synergies))
 
-  # Find the number of predictive models for every synergy subset
-  if (calculate.subsets.stats) {
-    synergy.subset.stats = get_synergy_subset_stats(observed.model.predictions, predicted.synergies)
-  }
-
   # Count the predictions of the observed synergies per model (TP)
   models.synergies.tp = calculate_models_synergies_tp(observed.model.predictions)
 
   # Make all possible classification group matchings and get the
   # average state differences
   diff.state.tp.mat = get_avg_activity_diff_mat_based_on_tp_predictions(
-    models, models.synergies.tp, models.stable.state
-  )
+    models.synergies.tp, models.stable.state, penalty)
 
   # find the active and inhibited biomarkers based on the TP classification groups
   biomarkers.state.list = get_biomarkers(diff.state.tp.mat, threshold)
 
   # return all necessary data as elements of a list
   res.list = list()
-  res.list$observed.model.predictions = observed.model.predictions
-  res.list$unobserved.model.predictions = unobserved.model.predictions
   res.list$predicted.synergies = predicted.synergies
-  if (calculate.subsets.stats) {
-    res.list$synergy.subset.stats = synergy.subset.stats
-  }
   res.list$models.synergies.tp = models.synergies.tp
   res.list$diff.state.tp.mat = diff.state.tp.mat
   res.list$biomarkers.tp.active = biomarkers.state.list$biomarkers.pos
@@ -143,13 +128,14 @@ biomarker_tp_analysis =
 
   if (!is.null(models.link.operator)) {
     # check
-    stopifnot(all(models == rownames(models.link.operator)))
+    stopifnot(all(rownames(model.predictions) == rownames(models.link.operator)))
+    stopifnot(all(models.link.operator == 0 | models.link.operator == 1 | models.link.operator == 0.5))
 
     # Make all possible classification group matchings and get the average
     # link operator differences
     diff.link.tp.mat = get_avg_link_operator_diff_mat_based_on_tp_predictions(
-      models, models.synergies.tp, models.link.operator
-    )
+      models.synergies.tp, models.link.operator, penalty)
+
     # find the 'OR' and 'AND' biomarkers based on the TP classification groups
     biomarkers.link.list = get_biomarkers(diff.link.tp.mat, threshold)
 
@@ -175,16 +161,16 @@ biomarker_tp_analysis =
 #' element} are either \emph{0} (no synergy predicted), \emph{1} (synergy was
 #' predicted) or \emph{NA} (couldn't find stable states in either the drug
 #' combination inhibited model or in any of the two single-drug inhibited models).
-#' @param models.stable.state a matrix (nxm) with n models and m nodes. The row
-#' names of the matrix specify the models' names whereas the column names
-#' specify the name of the network nodes (gene, proteins, etc.).
-#' Possible values for each \emph{model-node element}
-#' are either \emph{0} (inactive node) or \emph{1} (active node). Note that the
-#' rows (models) have to be in the same order as in the \code{model.predictions}
+#' @param models.stable.state a \code{data.frame} (nxm) with n models and m nodes.
+#' The row names specify the models' names whereas the column names specify the
+#' network nodes (gene, proteins, etc.). Possible values for each \emph{model-node element}
+#' can be between \emph{0} (inactive node) and \emph{1} (active node) inclusive.
+#' Note that the rows (models) have to be in the same order as in the \code{model.predictions}
 #' parameter.
-#' @param models.link.operator a matrix (nxm) with n models and m nodes. The row
-#' names of the matrix specify the models' names whereas the column names specify
-#' the name of the network nodes (gene, proteins, etc.). Possible values for each
+#' @param models.link.operator a \code{data.frame} (nxm) with n models and m nodes. The row
+#' names specify the models' names (same order as in the \code{model.predictions}
+#' parameter) whereas the column names specify
+#' the network nodes (gene, proteins, etc.). Possible values for each
 #' \emph{model-node element} are either \emph{0} (\strong{AND NOT} link operator),
 #' \emph{1} (\strong{OR NOT} link operator) or \emph{0.5} if the node is not targeted
 #' by both activating and inhibiting regulators (no link operator). Default value:
@@ -200,32 +186,21 @@ biomarker_tp_analysis =
 #' biomarkers are found.
 #' @param num.of.mcc.classes numeric. A positive integer larger than 2 that
 #' signifies the number of mcc classes (groups) that we should split the models
-#' MCC values (excluding the 'NaN' values).
-#' @param include.NaN.mcc.class logical. Should the models that have NaN MCC value
-#' (e.g. TP+FP = 0, models that predicted no synergies at all) be classified together
-#' in one class - the 'NaN MCC Class' - and compared with the other model classes
-#' in the analysis? If \emph{TRUE} (default), then the number of total MCC classes
-#' will be \emph{num.of.mcc.classes + 1}.
-#' @param calculate.subsets.stats logical. If \emph{TRUE}, then the results will
-#' include a vector of integers, representing the number of models that predicted
-#' every subset of the given \code{observed.synergies} (where at least one model
-#' predicts every synergy in the subset). The default value is \emph{FALSE}, since
-#' the powerset of the predicted \code{observed.synergies} can be very large to compute.
+#' MCC values. Default value: 5.
+#' @param penalty value between 0 and 1 (inclusive). A value of 0 means no
+#' penalty and a value of 1 is the strickest possible penalty. Default value is 0.1.
+#' This penalty is used as part of a weighted term to the difference in a value of
+#' interest (e.g. activity or link operator difference) between two group of
+#' models, to account for the difference in the number of models from each
+#' respective model group.
 #'
 #' @return a list with various elements:
 #' \itemize{
-#'   \item \code{observed.model.predictions}: the part of the \code{model.predictions}
-#'   data that includes the \code{observed.synergies}.
-#'   \item \code{unobserved.model.predictions}: the complementary part of the
-#'   \code{model.predictions} data that does not include the \code{observed.synergies}
 #'   \item \code{predicted.synergies}: a character vector of the synergies (drug
 #'   combination names) that were predicted by \strong{at least one} of the models
 #'   in the dataset.
-#'   \item \code{synergy.subset.stats}: an integer vector with elements the number
-#'   of models the predicted each \strong{observed synergy subset} if the
-#'   \emph{calculate.subsets.stats} option is enabled.
-#'   \item \code{models.mcc}: a numeric vector of MCC values (NaN's can be
-#'   included), one for each model.
+#'   \item \code{models.mcc}: a numeric vector of MCC scores, one for each model.
+#'   Values are in the [-1,1] interval.
 #'   \item \code{diff.state.mcc.mat}: a matrix whose rows are \strong{vectors of
 #'   average node activity state differences} between two groups of models where
 #'   the classification was based on the \emph{MCC score} of each model and was
@@ -263,16 +238,17 @@ biomarker_tp_analysis =
 #' @family general analysis functions
 #' @export
 biomarker_mcc_analysis = function(model.predictions, models.stable.state,
-  models.link.operator = NULL, observed.synergies, threshold, num.of.mcc.classes,
-  include.NaN.mcc.class = TRUE, calculate.subsets.stats = FALSE) {
+  models.link.operator = NULL, observed.synergies, threshold,
+  num.of.mcc.classes = 5, penalty = 0.1) {
 
   # check input
   stopifnot(threshold >= 0 & threshold <= 1)
+  stopifnot(length(observed.synergies) > 0)
+  stopifnot(all(observed.synergies %in% colnames(model.predictions)))
   stopifnot(num.of.mcc.classes >= 2)
   number.of.drug.comb.tested = ncol(model.predictions)
-  models = rownames(model.predictions)
-
-  stopifnot(all(models == rownames(models.stable.state)))
+  stopifnot(all(rownames(model.predictions) == rownames(models.stable.state)))
+  stopifnot(all(models.stable.state >= 0, models.stable.state <= 1))
 
   # Split model.predictions to positive (observed) and negative (non-observed) results
   observed.model.predictions =
@@ -290,11 +266,6 @@ biomarker_mcc_analysis = function(model.predictions, models.stable.state,
   # check: the predicted synergies is a subset of the observed ones
   stopifnot(all(predicted.synergies %in% observed.synergies))
 
-  # Find the number of predictive models for every synergy subset
-  if (calculate.subsets.stats) {
-    synergy.subset.stats = get_synergy_subset_stats(observed.model.predictions, predicted.synergies)
-  }
-
   # Calculate Matthews Correlation Coefficient (MCC) for every model
   models.mcc = calculate_models_mcc(observed.model.predictions,
                                     unobserved.model.predictions,
@@ -303,20 +274,14 @@ biomarker_mcc_analysis = function(model.predictions, models.stable.state,
   # Make all possible classification group matchings and get the
   # average state differences
   diff.state.mcc.mat = get_avg_activity_diff_mat_based_on_mcc_clustering(
-    models.mcc, models.stable.state, num.of.mcc.classes, include.NaN.mcc.class
-  )
+    models.mcc, models.stable.state, num.of.mcc.classes, penalty)
 
   # find the active and inhibited biomarkers based on the MCC classification groups
   biomarkers.state.list = get_biomarkers(diff.state.mcc.mat, threshold)
 
   # return all necessary data as elements of a list
   res.list = list()
-  res.list$observed.model.predictions = observed.model.predictions
-  res.list$unobserved.model.predictions = unobserved.model.predictions
   res.list$predicted.synergies = predicted.synergies
-  if (calculate.subsets.stats) {
-    res.list$synergy.subset.stats = synergy.subset.stats
-  }
   res.list$models.mcc = models.mcc
   res.list$diff.state.mcc.mat = diff.state.mcc.mat
   res.list$biomarkers.mcc.active = biomarkers.state.list$biomarkers.pos
@@ -324,13 +289,14 @@ biomarker_mcc_analysis = function(model.predictions, models.stable.state,
 
   if (!is.null(models.link.operator)) {
     # check
-    stopifnot(all(models == rownames(models.link.operator)))
+    stopifnot(all(rownames(model.predictions) == rownames(models.link.operator)))
+    stopifnot(all(models.link.operator == 0 | models.link.operator == 1 | models.link.operator == 0.5))
 
     # Make all possible classification group matchings and get the average
     # link operator differences
     diff.link.mcc.mat = get_avg_link_operator_diff_mat_based_on_mcc_clustering(
-      models.mcc, models.link.operator, num.of.mcc.classes, include.NaN.mcc.class
-    )
+      models.mcc, models.link.operator, num.of.mcc.classes, penalty)
+
     # find the 'OR' and 'AND' biomarkers based on the TP classification groups
     biomarkers.link.list = get_biomarkers(diff.link.mcc.mat, threshold)
 
@@ -346,7 +312,7 @@ biomarker_mcc_analysis = function(model.predictions, models.stable.state,
 #'
 #' Use this function to discover \emph{synergy biomarkers}, i.e. nodes whose
 #' activity and/or boolean equation parameterization (link operator) affect the
-#' manifestation of synergies in the models. Models are classified based on
+#' manifestation of synergies in the boolean models. Models are classified to groups based on
 #' whether they predict or not each of the predicted synergies.
 #'
 #' @param model.predictions a \code{data.frame} object with rows the models and
@@ -354,16 +320,16 @@ biomarker_mcc_analysis = function(model.predictions, models.stable.state,
 #' element} are either \emph{0} (no synergy predicted), \emph{1} (synergy was
 #' predicted) or \emph{NA} (couldn't find stable states in either the drug
 #' combination inhibited model or in any of the two single-drug inhibited models).
-#' @param models.stable.state a matrix (nxm) with n models and m nodes. The row
-#' names of the matrix specify the models' names whereas the column names
-#' specify the name of the network nodes (gene, proteins, etc.).
-#' Possible values for each \emph{model-node element}
-#' are either \emph{0} (inactive node) or \emph{1} (active node). Note that the
-#' rows (models) have to be in the same order as in the \code{model.predictions}
+#' @param models.stable.state a \code{data.frame} (nxm) with n models and m nodes. The row
+#' names specify the models' names whereas the column names specify the network
+#' nodes (gene, proteins, etc.). Possible values for each \emph{model-node element}
+#' can be between \emph{0} (inactive node) and \emph{1} (active node) inclusive.
+#' Note that the rows (models) have to be in the same order as in the \code{model.predictions}
 #' parameter.
-#' @param models.link.operator a matrix (nxm) with n models and m nodes. The row
-#' names of the matrix specify the models' names whereas the column names specify
-#' the name of the network nodes (gene, proteins, etc.). Possible values for each
+#' @param models.link.operator a \code{data.frame} (nxm) with n models and m nodes. The row
+#' names specify the models' names (same order as in the \code{model.predictions}
+#' parameter) whereas the column names specify
+#' the network nodes (gene, proteins, etc.). Possible values for each
 #' \emph{model-node element} are either \emph{0} (\strong{AND NOT} link operator),
 #' \emph{1} (\strong{OR NOT} link operator) or \emph{0.5} if the node is not targeted
 #' by both activating and inhibiting regulators (no link operator). Default value:
@@ -382,19 +348,28 @@ biomarker_mcc_analysis = function(model.predictions, models.stable.state,
 #' every subset of the given \code{observed.synergies} (where at least one model
 #' predicts every synergy in the subset). The default value is \emph{FALSE}, since
 #' the powerset of the predicted \code{observed.synergies} can be very large to compute.
+#' @param penalty value between 0 and 1 (inclusive). A value of 0 means no
+#' penalty and a value of 1 is the strickest possible penalty. Default value is 0.1.
+#' This penalty is used as part of a weighted term to the difference in a value of
+#' interest (e.g. activity or link operator difference) between two group of
+#' models, to account for the difference in the number of models from each
+#' respective model group.
 #'
 #' @return a list with various elements:
 #' \itemize{
-#'   \item \code{observed.model.predictions}: the part of the \code{model.predictions}
-#'   data that includes the \code{observed.synergies}.
-#'   \item \code{unobserved.model.predictions}: the complementary part of the
-#'   \code{model.predictions} data that does not include the \code{observed.synergies}
 #'   \item \code{predicted.synergies}: a character vector of the synergies (drug
 #'   combination names) that were predicted by \strong{at least one} of the models
 #'   in the dataset.
 #'   \item \code{synergy.subset.stats}: an integer vector with elements the number
 #'   of models the predicted each \strong{observed synergy subset} if the
 #'   \emph{calculate.subsets.stats} option is enabled.
+#'   \item \code{synergy.comparison.sets}: a \code{data.frame} with pairs of
+#'   \emph{(set, subset)} for each model-predicted synergy where each respective
+#'   subset misses just one synergy from the larger set (present only if the
+#'   \emph{calculate.subsets.stats} option is enabled). Can be used to refine
+#'   the synergy biomarkers by comparing any two synergy sets with the functions
+#'   \code{\link{get_avg_activity_diff_based_on_synergy_set_cmp}} or
+#'   \code{\link{get_avg_link_operator_diff_based_on_synergy_set_cmp}}.
 #'   \item \code{diff.state.synergies.mat}: a matrix whose rows are
 #'   \strong{vectors of average node activity state differences} between two
 #'   groups of models where the classification for each individual row was based
@@ -427,11 +402,13 @@ biomarker_mcc_analysis = function(model.predictions, models.stable.state,
 #' @export
 biomarker_synergy_analysis =
   function(model.predictions, models.stable.state, models.link.operator = NULL,
-           observed.synergies, threshold, calculate.subsets.stats = FALSE) {
+           observed.synergies, threshold, calculate.subsets.stats = FALSE, penalty = 0.1) {
     # check input
     stopifnot(threshold >= 0 & threshold <= 1)
-    models = rownames(model.predictions)
-    stopifnot(all(models == rownames(models.stable.state)))
+    stopifnot(length(observed.synergies) > 0)
+    stopifnot(all(observed.synergies %in% colnames(model.predictions)))
+    stopifnot(all(rownames(model.predictions) == rownames(models.stable.state)))
+    stopifnot(all(models.stable.state >= 0, models.stable.state <= 1))
 
     # Split model.predictions to positive (observed) and negative (non-observed) results
     observed.model.predictions =
@@ -452,13 +429,13 @@ biomarker_synergy_analysis =
     # Find the number of predictive models for every synergy subset
     if (calculate.subsets.stats) {
       synergy.subset.stats = get_synergy_subset_stats(observed.model.predictions, predicted.synergies)
+      synergy.comparison.sets = get_synergy_comparison_sets(synergy.subset.stats)
     }
 
     # get the average activity state differences for each predicted synergy
     diff.state.synergies.mat =
       get_avg_activity_diff_mat_based_on_specific_synergy_prediction(
-        model.predictions, models.stable.state, predicted.synergies
-      )
+        model.predictions, models.stable.state, predicted.synergies, penalty)
 
     # find the active and inhibited biomarkers for each predicted synergy
     activity.biomarkers = as.data.frame(
@@ -466,24 +443,23 @@ biomarker_synergy_analysis =
 
     # return all necessary data as elements of a list
     res.list = list()
-    res.list$observed.model.predictions = observed.model.predictions
-    res.list$unobserved.model.predictions = unobserved.model.predictions
     res.list$predicted.synergies = predicted.synergies
     if (calculate.subsets.stats) {
       res.list$synergy.subset.stats = synergy.subset.stats
+      res.list$synergy.comparison.sets = synergy.comparison.sets
     }
     res.list$diff.state.synergies.mat = diff.state.synergies.mat
     res.list$activity.biomarkers = activity.biomarkers
 
     if (!is.null(models.link.operator)) {
       # check
-      stopifnot(all(models == rownames(models.link.operator)))
+      stopifnot(all(rownames(model.predictions) == rownames(models.link.operator)))
+      stopifnot(all(models.link.operator == 0 | models.link.operator == 1 | models.link.operator == 0.5))
 
       # get the average link operator differences for each predicted synergy
       diff.link.synergies.mat =
         get_avg_link_operator_diff_mat_based_on_specific_synergy_prediction(
-          model.predictions, models.link.operator, predicted.synergies
-        )
+          model.predictions, models.link.operator, predicted.synergies, penalty)
 
       # find the 'OR' and 'AND' biomarkers for each predicted synergy
       link.operator.biomarkers = as.data.frame(

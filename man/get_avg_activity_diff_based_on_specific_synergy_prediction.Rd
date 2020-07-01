@@ -7,7 +7,8 @@
 get_avg_activity_diff_based_on_specific_synergy_prediction(
   model.predictions,
   models.stable.state,
-  drug.comb
+  drug.comb,
+  penalty = 0
 )
 }
 \arguments{
@@ -17,15 +18,21 @@ element} are either \emph{0} (no synergy predicted), \emph{1} (synergy was
 predicted) or \emph{NA} (couldn't find stable states in either the drug
 combination inhibited model or in any of the two single-drug inhibited models)}
 
-\item{models.stable.state}{a matrix (nxm) with n models and m nodes. The row
-names of the matrix specify the models' names
-whereas the column names specify the name of the network nodes
+\item{models.stable.state}{a \code{data.frame} (nxm) with n models and m nodes. The row
+names specify the models' names whereas the column names specify the network nodes
 (gene, proteins, etc.). Possible values for each \emph{model-node element}
-are either \emph{0} (inactive node) or \emph{1} (active node).}
+can be between \emph{0} (inactive node) and \emph{1} (active node) inclusive.}
 
 \item{drug.comb}{string. The drug combination which will be used to split
 the models. It must be included in the column names of the \code{model.predictions}
 object.}
+
+\item{penalty}{value between 0 and 1 (inclusive). A value of 0 means no
+penalty and a value of 1 is the strickest possible penalty. Default value is 0.
+This penalty is used as part of a weighted term to the difference in a value of
+interest (e.g. activity or link operator difference) between two group of
+models, to account for the difference in the number of models from each
+respective model group.}
 }
 \value{
 a numeric vector with values in the [-1,1] interval (minimum and maximum
@@ -41,7 +48,8 @@ bad (those that found it as non-synergistic - a value of \emph{0} in the
 \emph{NA} are excluded from the analysis. Then, for each network node, the
 function finds the node's average activity in each of the two model groups (a
 value in the [0,1] interval) and then subtracts the bad group's average
-activity value from the good one.
+activity value from the good one, taking into account the given \code{penalty}
+factor and the number of models in each respective model group.
 }
 \section{Details}{
 
@@ -56,6 +64,8 @@ manifestation of the synergy.
 }
 
 \seealso{
+\code{\link{get_vector_diff}}
+
 Other average data difference functions: 
 \code{\link{get_avg_activity_diff_based_on_mcc_clustering}()},
 \code{\link{get_avg_activity_diff_based_on_synergy_set_cmp}()},
@@ -63,7 +73,6 @@ Other average data difference functions:
 \code{\link{get_avg_activity_diff_mat_based_on_mcc_clustering}()},
 \code{\link{get_avg_activity_diff_mat_based_on_specific_synergy_prediction}()},
 \code{\link{get_avg_activity_diff_mat_based_on_tp_predictions}()},
-\code{\link{get_avg_link_operator_diff_based_on_specific_synergy_prediction}()},
 \code{\link{get_avg_link_operator_diff_based_on_synergy_set_cmp}()},
 \code{\link{get_avg_link_operator_diff_mat_based_on_mcc_clustering}()},
 \code{\link{get_avg_link_operator_diff_mat_based_on_specific_synergy_prediction}()},

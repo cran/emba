@@ -10,9 +10,8 @@ biomarker_mcc_analysis(
   models.link.operator = NULL,
   observed.synergies,
   threshold,
-  num.of.mcc.classes,
-  include.NaN.mcc.class = TRUE,
-  calculate.subsets.stats = FALSE
+  num.of.mcc.classes = 5,
+  penalty = 0.1
 )
 }
 \arguments{
@@ -22,17 +21,17 @@ element} are either \emph{0} (no synergy predicted), \emph{1} (synergy was
 predicted) or \emph{NA} (couldn't find stable states in either the drug
 combination inhibited model or in any of the two single-drug inhibited models).}
 
-\item{models.stable.state}{a matrix (nxm) with n models and m nodes. The row
-names of the matrix specify the models' names whereas the column names
-specify the name of the network nodes (gene, proteins, etc.).
-Possible values for each \emph{model-node element}
-are either \emph{0} (inactive node) or \emph{1} (active node). Note that the
-rows (models) have to be in the same order as in the \code{model.predictions}
+\item{models.stable.state}{a \code{data.frame} (nxm) with n models and m nodes.
+The row names specify the models' names whereas the column names specify the
+network nodes (gene, proteins, etc.). Possible values for each \emph{model-node element}
+can be between \emph{0} (inactive node) and \emph{1} (active node) inclusive.
+Note that the rows (models) have to be in the same order as in the \code{model.predictions}
 parameter.}
 
-\item{models.link.operator}{a matrix (nxm) with n models and m nodes. The row
-names of the matrix specify the models' names whereas the column names specify
-the name of the network nodes (gene, proteins, etc.). Possible values for each
+\item{models.link.operator}{a \code{data.frame} (nxm) with n models and m nodes. The row
+names specify the models' names (same order as in the \code{model.predictions}
+parameter) whereas the column names specify
+the network nodes (gene, proteins, etc.). Possible values for each
 \emph{model-node element} are either \emph{0} (\strong{AND NOT} link operator),
 \emph{1} (\strong{OR NOT} link operator) or \emph{0.5} if the node is not targeted
 by both activating and inhibiting regulators (no link operator). Default value:
@@ -51,35 +50,23 @@ biomarkers are found.}
 
 \item{num.of.mcc.classes}{numeric. A positive integer larger than 2 that
 signifies the number of mcc classes (groups) that we should split the models
-MCC values (excluding the 'NaN' values).}
+MCC values. Default value: 5.}
 
-\item{include.NaN.mcc.class}{logical. Should the models that have NaN MCC value
-(e.g. TP+FP = 0, models that predicted no synergies at all) be classified together
-in one class - the 'NaN MCC Class' - and compared with the other model classes
-in the analysis? If \emph{TRUE} (default), then the number of total MCC classes
-will be \emph{num.of.mcc.classes + 1}.}
-
-\item{calculate.subsets.stats}{logical. If \emph{TRUE}, then the results will
-include a vector of integers, representing the number of models that predicted
-every subset of the given \code{observed.synergies} (where at least one model
-predicts every synergy in the subset). The default value is \emph{FALSE}, since
-the powerset of the predicted \code{observed.synergies} can be very large to compute.}
+\item{penalty}{value between 0 and 1 (inclusive). A value of 0 means no
+penalty and a value of 1 is the strickest possible penalty. Default value is 0.1.
+This penalty is used as part of a weighted term to the difference in a value of
+interest (e.g. activity or link operator difference) between two group of
+models, to account for the difference in the number of models from each
+respective model group.}
 }
 \value{
 a list with various elements:
 \itemize{
-  \item \code{observed.model.predictions}: the part of the \code{model.predictions}
-  data that includes the \code{observed.synergies}.
-  \item \code{unobserved.model.predictions}: the complementary part of the
-  \code{model.predictions} data that does not include the \code{observed.synergies}
   \item \code{predicted.synergies}: a character vector of the synergies (drug
   combination names) that were predicted by \strong{at least one} of the models
   in the dataset.
-  \item \code{synergy.subset.stats}: an integer vector with elements the number
-  of models the predicted each \strong{observed synergy subset} if the
-  \emph{calculate.subsets.stats} option is enabled.
-  \item \code{models.mcc}: a numeric vector of MCC values (NaN's can be
-  included), one for each model.
+  \item \code{models.mcc}: a numeric vector of MCC scores, one for each model.
+  Values are in the [-1,1] interval.
   \item \code{diff.state.mcc.mat}: a matrix whose rows are \strong{vectors of
   average node activity state differences} between two groups of models where
   the classification was based on the \emph{MCC score} of each model and was

@@ -8,7 +8,8 @@ get_avg_activity_diff_based_on_synergy_set_cmp(
   synergy.set.str,
   synergy.subset.str,
   model.predictions,
-  models.stable.state
+  models.stable.state,
+  penalty = 0
 )
 }
 \arguments{
@@ -28,11 +29,17 @@ element} are either \emph{0} (no synergy predicted), \emph{1} (synergy was
 predicted) or \emph{NA} (couldn't find stable states in either the drug
 combination inhibited model or in any of the two single-drug inhibited models)}
 
-\item{models.stable.state}{a matrix (nxm) with n models and m nodes. The row
-names of the matrix specify the models' names
-whereas the column names specify the name of the network nodes
+\item{models.stable.state}{a \code{data.frame} (nxm) with n models and m nodes. The row
+names specify the models' names whereas the column names specify the network nodes
 (gene, proteins, etc.). Possible values for each \emph{model-node element}
-are either \emph{0} (inactive node) or \emph{1} (active node).}
+can be between \emph{0} (inactive node) and \emph{1} (active node) inclusive.}
+
+\item{penalty}{value between 0 and 1 (inclusive). A value of 0 means no
+penalty and a value of 1 is the strickest possible penalty. Default value is 0.
+This penalty is used as part of a weighted term to the difference in a value of
+interest (e.g. activity or link operator difference) between two group of
+models, to account for the difference in the number of models from each
+respective model group.}
 }
 \value{
 a numeric vector with values in the [-1,1] interval (minimum and
@@ -47,7 +54,8 @@ The 'good' models are those that predict the \code{synergy.set.str}
 \code{synergy.subset.str} (e.g. "A-B,B-C"). Then, for each network node,
 the function finds the node's average activity in each of the two classes
 (a value in the [0,1] interval) and then subtracts the bad class average
-activity value from the good one.
+activity value from the good one, taking into account the given \code{penalty}
+factor and the number of models in the 'good' and 'bad' class respectively.
 }
 \section{Details}{
 
@@ -60,11 +68,13 @@ biomarkers} because their activity state can influence the prediction
 performance of a model and make it predict the extra synergy(-ies).
 A value closer to 0 indicates that the activity of that
 node is \strong{not so much different} between the models that predicted the
-synergy set and those that predicted it's subset, so it won't not be a node
+synergy set and those that predicted it's subset, so it won't be a node
 of interest when searching for potential biomarkers for the extra synergy(-ies).
 }
 
 \seealso{
+\code{\link{get_vector_diff}}
+
 Other average data difference functions: 
 \code{\link{get_avg_activity_diff_based_on_mcc_clustering}()},
 \code{\link{get_avg_activity_diff_based_on_specific_synergy_prediction}()},
@@ -72,7 +82,6 @@ Other average data difference functions:
 \code{\link{get_avg_activity_diff_mat_based_on_mcc_clustering}()},
 \code{\link{get_avg_activity_diff_mat_based_on_specific_synergy_prediction}()},
 \code{\link{get_avg_activity_diff_mat_based_on_tp_predictions}()},
-\code{\link{get_avg_link_operator_diff_based_on_specific_synergy_prediction}()},
 \code{\link{get_avg_link_operator_diff_based_on_synergy_set_cmp}()},
 \code{\link{get_avg_link_operator_diff_mat_based_on_mcc_clustering}()},
 \code{\link{get_avg_link_operator_diff_mat_based_on_specific_synergy_prediction}()},

@@ -8,7 +8,7 @@ get_avg_link_operator_diff_mat_based_on_mcc_clustering(
   models.mcc,
   models.link.operator,
   num.of.mcc.classes,
-  include.NaN.mcc.class
+  penalty = 0
 )
 }
 \arguments{
@@ -16,9 +16,9 @@ get_avg_link_operator_diff_mat_based_on_mcc_clustering(
 scores, one for each model. The \emph{names} attribute holds the models' names.
 Can be the result of using the function \code{\link{calculate_models_mcc}}.}
 
-\item{models.link.operator}{matrix (nxm) with n models and m nodes. The row
-names of the matrix specify the models' names (same order as in the
-\code{models.mcc} parameter) whereas the column names specify the name of the
+\item{models.link.operator}{a \code{data.frame} (nxm) with n models and m nodes.
+The row names specify the models' names (same order as in the
+\code{models.mcc} parameter) whereas the column names specify the
 network nodes (gene, proteins, etc.). Possible values for each \emph{model-node
 element} are either \emph{0} (\strong{AND NOT} link operator), \emph{1}
 (\strong{OR NOT} link operator) or \emph{0.5} if the node is not targeted by
@@ -26,13 +26,14 @@ both activating and inhibiting regulators (no link operator).}
 
 \item{num.of.mcc.classes}{numeric. A positive integer larger than 2 that
 signifies the number of mcc classes (groups) that we should split the models
-MCC values (excluding the 'NaN' values).}
+MCC values.}
 
-\item{include.NaN.mcc.class}{logical. Should the models that have NaN MCC value
-(e.g. TP+FP = 0, models that predicted no synergies at all) be classified together
-in one class - the 'NaN MCC Class' - and compared with the other model classes
-in the analysis? If \emph{TRUE}, then the number of total MCC classes will be
-\emph{num.of.mcc.classes + 1}.}
+\item{penalty}{value between 0 and 1 (inclusive). A value of 0 means no
+penalty and a value of 1 is the strickest possible penalty. Default value is 0.
+This penalty is used as part of a weighted term to the difference in a value of
+interest (e.g. activity or link operator difference) between two group of
+models, to account for the difference in the number of models from each
+respective model group.}
 }
 \value{
 a matrix whose rows are \strong{vectors of average node link operator
@@ -67,6 +68,8 @@ in model performance.
 }
 
 \seealso{
+\code{\link{get_vector_diff}}
+
 Other average data difference functions: 
 \code{\link{get_avg_activity_diff_based_on_mcc_clustering}()},
 \code{\link{get_avg_activity_diff_based_on_specific_synergy_prediction}()},
@@ -75,7 +78,6 @@ Other average data difference functions:
 \code{\link{get_avg_activity_diff_mat_based_on_mcc_clustering}()},
 \code{\link{get_avg_activity_diff_mat_based_on_specific_synergy_prediction}()},
 \code{\link{get_avg_activity_diff_mat_based_on_tp_predictions}()},
-\code{\link{get_avg_link_operator_diff_based_on_specific_synergy_prediction}()},
 \code{\link{get_avg_link_operator_diff_based_on_synergy_set_cmp}()},
 \code{\link{get_avg_link_operator_diff_mat_based_on_specific_synergy_prediction}()},
 \code{\link{get_avg_link_operator_diff_mat_based_on_tp_predictions}()}

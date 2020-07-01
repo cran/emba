@@ -10,27 +10,29 @@ get_link_operators_from_models_dir(
 )
 }
 \arguments{
-\item{models.dir}{string. A dir with \emph{.gitsbe} files/models}
+\item{models.dir}{string. A directory path with \emph{.gitsbe} files/models.
+\strong{Do not} include the ending path character in the string (\emph{/}).}
 
 \item{remove.equations.without.link.operator}{logical. Should we keep the
 nodes (columns in the returned matrix) which do not have both type of
 regulators (so no link operator)? Default value: TRUE (remove these nodes).}
 }
 \value{
-a matrix (nxm) with n models and m nodes. The row names of the matrix
-specify the models' names whereas the column names specify the name of the
+a \code{data.frame} (nxm) with n models and m nodes. The row names
+specify the models' names whereas the column names specify the
 network nodes (gene, proteins, etc.). Possible values for each \emph{model-node
-element} are either \emph{0} (\strong{AND NOT} link operator), \emph{1}
-(\strong{OR NOT} link operator) or \emph{0.5} if the node is not targeted by
+element} are either \emph{0} (\strong{and not} link operator), \emph{1}
+(\strong{or not} link operator) or \emph{0.5} if the node is not targeted by
 both activating and inhibiting regulators (no link operator).
 }
 \description{
 Use this function to merge the link operator data used in the boolean equations
-of the models into a single matrix. Every boolean model is defined by a series
-of boolean equations in the form \eqn{Target *= (Activator OR Activator OR...)
-AND NOT (Inhibitor OR Inhibitor OR...)"}. The \strong{link operator} can be
-either \emph{AND NOT}, \emph{OR NOT} or non-existent if the target has only
-activating regulators or only inhibiting ones. The models are loaded from
+of the models into a single \code{data.frame} object. Every boolean model is defined by a series
+of boolean equations in the form \eqn{Target *= (Activator or Activator or...)
+and not (Inhibitor or Inhibitor or...)"}. The \strong{link operator} can be
+either \emph{and not}, \emph{or not} or non-existent if the target has only
+activating regulators or only inhibiting ones (the \emph{not} remains in the
+latter case). The models are loaded from
 \emph{.gitsbe} files that can be found inside the given \code{models.dir}
 directory.
 }

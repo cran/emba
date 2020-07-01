@@ -19,20 +19,21 @@
 #' model.predictions = get_model_predictions(model.predictions.file)
 #'
 #' @importFrom utils read.table
+#' @importFrom tidyr %>%
+#' @importFrom tibble column_to_rownames
 #' @export
 get_model_predictions = function(model.predictions.file) {
-  #print(paste("Reading model predictions file:", model.predictions.file))
+  # Get the column names (drug combination names)
+  first.line = readLines(model.predictions.file, n = 1)
+  first.line = sub("ModelName\t|#ModelName\t", "", first.line)
+  drug.combo.names = unlist(strsplit(first.line, split = '\t'))
+  drug.combo.names = sapply(drug.combo.names, function(x) {
+    gsub(pattern = "\\[|\\]", replacement = "", x)
+    }, USE.NAMES = F)
 
-  lines = readLines(model.predictions.file)
-  lines[1] = sub("ModelName\t|#ModelName\t", "", lines[1])
-  tmp.file = "model_predictions.tab"
-  writeLines(lines, tmp.file)
-  model.data = read.table("model_predictions.tab",  check.names = F)
-
-  if (file.exists(tmp.file)) invisible(file.remove(tmp.file))
-  for (i in 1:length(colnames(model.data))) {
-    colnames(model.data)[i] = gsub("\\[|\\]", "", colnames(model.data)[i])
-  }
+  model.data = read.table(model.predictions.file, header = FALSE, skip = 1, stringsAsFactors = FALSE)
+  model.data = model.data %>% tibble::column_to_rownames(var = "V1")
+  colnames(model.data) = drug.combo.names
 
   return(model.data)
 }
@@ -75,65 +76,94 @@ get_observed_synergies =
 #' Load the models stable state data
 #'
 #' Use this function to merge the stable states from all models into a single
-#' matrix. The models stable states are loaded from \emph{.gitsbe} files that can
-#' be found inside the given \code{models.dir} directory.
+#' \code{data.frame} object. The models stable states are loaded from \emph{.gitsbe}
+#' files that can be found inside the given \code{models.dir} directory.
 #'
-#' @param models.dir string. A dir with \emph{.gitsbe} files/models
+#' @param models.dir string. A dir with \emph{.gitsbe} files/models.
+#' \strong{Do not} include the ending path character in the string (\emph{/}).
 #'
-#' @return a matrix (nxm) with n models and m nodes. The row names of the matrix
+#' @return a \code{data.frame} (nxm) with n models and m nodes. The row names
 #' specify the models' names whereas the column names specify the name of the
 #' network nodes (gene, proteins, etc.). Possible values for each \emph{model-node
-#' element} are either \emph{0} (inactive node) or \emph{1} (active node).
+#' element} are either \emph{0} (inactive node) or \emph{1} (active node). If a
+#' \emph{.gitsbe} file/model has zero (0) or more than 1 stable states, a diagnostic
+#' message is printed and the corresponding model is discarded, i.e. it will not
+#' be included in the returned \code{data.frame} object.
 #'
 #' @examples
 #'
 #' models.dir = system.file("extdata", "models", package = "emba", mustWork = TRUE)
 #' models.stable.state = get_stable_state_from_models_dir(models.dir)
 #'
+#' @importFrom stringr str_count
+#' @importFrom tidyr %>% separate
+#' @importFrom dplyr mutate_if
+#'
 #' @export
 get_stable_state_from_models_dir = function(models.dir) {
   files = list.files(models.dir)
-  model.stable.states = character(length(files))
+  ss_vec = character(length(files))
+  files_to_keep = character(length(files))
 
-  node.names = get_node_names(models.dir)
+  node_names = get_node_names(models.dir)
 
-  i = 0
+  index = 1
   for (file in files) {
-    i = i + 1
     lines = readLines(paste0(models.dir, "/", file))
-    model.stable.states[i] = gsub("stablestate: ", "", lines[4])
+    res = stringr::str_count(string = lines, pattern = "stablestate:")
+    if (sum(res) == 1) {
+      ss_index = which(res == 1)
+      ss_vec[index] = gsub(pattern = "stablestate: ", replacement = "",
+        x = lines[ss_index])
+      files_to_keep[index] = files[index]
+    } else {
+      message('Number of stable states different than 1 for model: ', file)
+    }
+    index = index + 1
   }
 
-  models.stable.state = data.frame(model.stable.states, row.names = files)
-  df = apply(models.stable.state, 1, function(x) {
-    as.numeric(strsplit(as.character(x[1]), "")[[1]])
-  })
-  rownames(df) = node.names
+  ss_vec = ss_vec[ss_vec != ""]
+  files = files_to_keep[files_to_keep != ""]
 
-  return(t(df))
+  df = data.frame(ss_vec)
+
+  df = df %>%
+    separate(col = ss_vec, into = node_names, sep = 1:length(node_names)) %>%
+    mutate_if(is.character, as.numeric)
+
+  # remove .gitsbe extension from files
+  model_names = sapply(files, function(x) {
+    sub(pattern = ".gitsbe", replacement = "", x)
+  }, USE.NAMES = FALSE)
+
+  rownames(df) = model_names
+
+  return(df)
 }
 
 #' Load the models boolean equation link operator data
 #'
 #' Use this function to merge the link operator data used in the boolean equations
-#' of the models into a single matrix. Every boolean model is defined by a series
-#' of boolean equations in the form \eqn{Target *= (Activator OR Activator OR...)
-#' AND NOT (Inhibitor OR Inhibitor OR...)"}. The \strong{link operator} can be
-#' either \emph{AND NOT}, \emph{OR NOT} or non-existent if the target has only
-#' activating regulators or only inhibiting ones. The models are loaded from
+#' of the models into a single \code{data.frame} object. Every boolean model is defined by a series
+#' of boolean equations in the form \eqn{Target *= (Activator or Activator or...)
+#' and not (Inhibitor or Inhibitor or...)"}. The \strong{link operator} can be
+#' either \emph{and not}, \emph{or not} or non-existent if the target has only
+#' activating regulators or only inhibiting ones (the \emph{not} remains in the
+#' latter case). The models are loaded from
 #' \emph{.gitsbe} files that can be found inside the given \code{models.dir}
 #' directory.
 #'
-#' @param models.dir string. A dir with \emph{.gitsbe} files/models
+#' @param models.dir string. A directory path with \emph{.gitsbe} files/models.
+#' \strong{Do not} include the ending path character in the string (\emph{/}).
 #' @param remove.equations.without.link.operator logical. Should we keep the
 #' nodes (columns in the returned matrix) which do not have both type of
 #' regulators (so no link operator)? Default value: TRUE (remove these nodes).
 #'
-#' @return a matrix (nxm) with n models and m nodes. The row names of the matrix
-#' specify the models' names whereas the column names specify the name of the
+#' @return a \code{data.frame} (nxm) with n models and m nodes. The row names
+#' specify the models' names whereas the column names specify the
 #' network nodes (gene, proteins, etc.). Possible values for each \emph{model-node
-#' element} are either \emph{0} (\strong{AND NOT} link operator), \emph{1}
-#' (\strong{OR NOT} link operator) or \emph{0.5} if the node is not targeted by
+#' element} are either \emph{0} (\strong{and not} link operator), \emph{1}
+#' (\strong{or not} link operator) or \emph{0.5} if the node is not targeted by
 #' both activating and inhibiting regulators (no link operator).
 #'
 #' @examples
@@ -147,24 +177,28 @@ get_stable_state_from_models_dir = function(models.dir) {
 get_link_operators_from_models_dir =
   function(models.dir, remove.equations.without.link.operator = TRUE) {
     files = list.files(models.dir)
+
+    model.names = sapply(files, function(x) {
+      sub(pattern = ".gitsbe", replacement = "", x)
+    }, USE.NAMES = FALSE)
     node.names = get_node_names(models.dir)
 
-    datalist = list(length(files))
+    datalist = list()
 
     # get the equations
-    i = 0
+    index = 1
     for (file in files) {
-      i = i+1
       lines = readLines(paste0(models.dir, "/", file))
       equations = grep("equation:", lines, value = TRUE)
       values = sapply(equations, function(equation) {
-        assign_link_operator_value_to_equation(equation)})
-      datalist[[i]] = values
+        assign_link_operator_value_to_equation(equation)}, USE.NAMES = FALSE)
+      datalist[[index]] = values
+      index = index + 1
     }
 
     df = do.call(rbind, datalist)
 
-    rownames(df) = files
+    rownames(df) = model.names
     colnames(df) = node.names
 
     if (remove.equations.without.link.operator) {
@@ -177,7 +211,7 @@ get_link_operators_from_models_dir =
       df[is.na(df)] = 0.5
     }
 
-    return(df)
+    return(as.data.frame(df))
 }
 
 #' Load the models fitness scores
@@ -201,6 +235,11 @@ get_link_operators_from_models_dir =
 #' @export
 get_fitness_from_models_dir = function(models.dir) {
   files = list.files(models.dir)
+
+  model.names = sapply(files, function(x) {
+    sub(pattern = ".gitsbe", replacement = "", x)
+  }, USE.NAMES = FALSE)
+
   model.fitness = character(length(files))
 
   i = 0
@@ -211,7 +250,7 @@ get_fitness_from_models_dir = function(models.dir) {
   }
 
   model.fitness = as.numeric(model.fitness)
-  names(model.fitness) = files
+  names(model.fitness) = model.names
 
   return(model.fitness)
 }
@@ -245,7 +284,7 @@ get_node_names = function(models.dir) {
 #' @param models.dir string. A dir with \emph{.gitsbe} files/models
 #'
 #' @return a character vector of the model names, corresponding to the names
-#' of the \emph{.gitsbe} files.
+#' of the \emph{.gitsbe} files (the extension is pruned).
 #'
 #' @examples
 #'
@@ -254,14 +293,17 @@ get_node_names = function(models.dir) {
 #'
 #' @export
 get_model_names = function(models.dir) {
-  return(list.files(models.dir))
+  model_names = sapply(list.files(models.dir), function(x) {
+    sub(pattern = ".gitsbe", replacement = "", x)
+  }, USE.NAMES = FALSE)
+  return(model_names)
 }
 
 #' Assign link operator value to boolean equation
 #'
 #' @param equation string. The boolean equation in the form
-#' \eqn{Target *= (Activator OR Activator OR...)
-#' AND NOT (Inhibitor OR Inhibitor OR...)"}
+#' \eqn{Target *= (Activator or Activator or...)
+#' and not (Inhibitor or Inhibitor or...)"}
 #'
 #' @return \strong{1} if the \code{equation} has the '\emph{or not}' link operator,
 #' \strong{0} if the \code{equation} has the '\emph{and not}' link operator and
@@ -309,8 +351,8 @@ is_comb_element_of = function(drug.comb, comb.vector) {
 #' This function checks that the observed synergies are part (a subset) of the
 #' tested drug combinations
 #'
-#' @param observed.synergies a character vector of drug combinations
-#' @param drug.combinations.tested a character vector of drug combinations
+#' @param observed.synergies a non-empty character vector of drug combinations
+#' @param drug.combinations.tested a non-empty character vector of drug combinations
 #'
 #' @return NULL if no errors found, otherwise stops execution.
 validate_observed_synergies_data =
@@ -364,6 +406,10 @@ get_alt_drugname = function(drug.comb) {
 #' \code{\link{get_edges_from_topology_file}},
 #' \code{\link{get_node_names}}
 #'
+#' @examples
+#' topology.file = system.file("extdata", "example.sif", package = "emba", mustWork = TRUE)
+#' net = construct_network(topology.file)
+#'
 #' @importFrom igraph graph_from_data_frame V V<- E E<-
 #' @export
 construct_network = function(topology.file, models.dir = NULL) {
@@ -403,11 +449,13 @@ construct_network = function(topology.file, models.dir = NULL) {
 #' regulation (activation or inhibition) and the color (green or red) of the
 #' signed interaction.
 #'
+#' @examples
+#' topology.file = system.file("extdata", "example.sif", package = "emba", mustWork = TRUE)
+#' edges = get_edges_from_topology_file(topology.file)
+#'
 #' @importFrom utils read.table
 #' @export
 get_edges_from_topology_file = function(topology.file) {
-  #print(paste("Reading topology file:", topology.file))
-
   edges = read.table(topology.file)
 
   # reorder&rename columns
@@ -441,9 +489,11 @@ get_edges_from_topology_file = function(topology.file) {
 #' How many vertices/nodes will be kept in the result graph object is determined
 #' by the initial nodes given and the level provided. A level equal to 0 corresponds
 #' to a subgraph with only the given nodes, a level equal to 1 to a subgraph with
-#' the nodes + their neighbors (the closed neighbourhood set) and a level equal to
-#' 2 to a subgraph with the nodes + their neighbors + the nodes neighbor neighbors!
-#' (so the neighbourhood of the neighbourhood)
+#' the nodes + their neighbors (the closed neighbourhood set where every node is within
+#' 1 edge distnace from the given ones) and a level equal to 2 to a subgraph
+#' with the nodes + their neighbors + the nodes neighbor neighbors!
+#' (so the neighbourhood of the neighbourhood or every node is within 2 edges
+#' distance from the given ones).
 #'
 #' @param net an igraph object.
 #' @param nodes character vector of node names. It must be a subset of the nodes
