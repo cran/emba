@@ -1,7 +1,7 @@
-8069bcb4e62971d34eeea83ff300c19f *DESCRIPTION
+a89e6350c5c92dc21d8605cb47096b60 *DESCRIPTION
 0643871768fb5a9452d56d7a3b90baed *LICENSE
 6ead37018a435b4dab173c84878b48a2 *NAMESPACE
-89edf755bcf233d98845c9affd6feadf *NEWS.md
+2e4ed52a9187e6b26b72f1167174add2 *NEWS.md
 b3e6ecb623d13d81f94400df845c436d *R/analysis.R
 ecaa48da20143a63a96ec6d772d8c862 *R/biomarkers.R
 b4fd44ac7465f258b1c10258057d8bbf *R/diff.R
@@ -15,7 +15,7 @@ cb1e84e85e20ca5d83742a7c3fd512fe *README.md
 9adc943dd197eecb8a08faea4a57d4e8 *build/vignette.rds
 63fafff2776b5b23985afebfb18f553f *inst/doc/emba.R
 d7caef669361242251965606d69e24be *inst/doc/emba.Rmd
-d60f9a5c97adf3d6c2c67786a764e5ef *inst/doc/emba.html
+d52f20339de143ecaf04b2cdb94881f3 *inst/doc/emba.html
 cfec547207f9a062462ab507d3ceffda *inst/extdata/AGS/bio/biomarkers_active
 851090dd8b6a53f4cda200ff86a87d74 *inst/extdata/AGS/bio/biomarkers_inhibited
 0b8d34c3a23ba0e6ac38059b70134d2c *inst/extdata/AGS/bio/biomarkers_per_synergy
@@ -97,7 +97,7 @@ fee7567fbda3a2e34a371619c91c4f9e *man/print_biomarkers_per_predicted_synergy.Rd
 a95359e34cc0f7ba081693705346e321 *man/update_biomarker_files.Rd
 d92789fed2bd6b57fbab78c057e43b32 *man/validate_observed_synergies_data.Rd
 c4166a9afb9c086a629cd90d06c40428 *tests/testthat.R
-4ed2ad2fd5e721c290b265cca829268c *tests/testthat/test-analysis.R
+aec06adaa0133fa533b738a0322514df *tests/testthat/test-analysis.R
 0cd856db12d8db2aea28b358cd50d7b1 *tests/testthat/test-biomarkers.R
 53419e86969617baf8768b026d03b9a6 *tests/testthat/test-diff.R
 de8f13ba1bd923867c27532624d4ea4a *tests/testthat/test-general.R

@@ -1,7 +1,7 @@
 Package: emba
 Type: Package
 Title: Ensemble Boolean Model Biomarker Analysis
-Version: 0.1.5
+Version: 0.1.6
 Authors@R: person("John", "Zobolas", role = c("aut", "cph", "cre"), 
   email = "bblodfon@gmail.com", comment = c(ORCID = "0000-0002-3609-8674"))
 Description: Analysis and visualization of an ensemble of boolean models for 
@@ -25,7 +25,7 @@ URL: https://bblodfon.github.io/emba/,
 BugReports: https://github.com/bblodfon/emba/issues
 Encoding: UTF-8
 LazyData: true
-RoxygenNote: 7.1.0
+RoxygenNote: 7.1.1
 Depends: R (>= 2.10)
 Imports: graphics, grDevices, utils, purrr, rje (>= 1.10), igraph (>=
         1.2.4), visNetwork (>= 2.0.9), Ckmeans.1d.dp (>= 4.2.2), usefun
@@ -33,8 +33,8 @@ Imports: graphics, grDevices, utils, purrr, rje (>= 1.10), igraph (>=
 Suggests: testthat, knitr, rmarkdown, xfun
 VignetteBuilder: knitr
 NeedsCompilation: no
-Packaged: 2020-07-01 17:13:48 UTC; john
+Packaged: 2020-07-08 00:54:00 UTC; john
 Author: John Zobolas [aut, cph, cre] (<https://orcid.org/0000-0002-3609-8674>)
 Maintainer: John Zobolas <bblodfon@gmail.com>
 Repository: CRAN
-Date/Publication: 2020-07-01 17:40:08 UTC
+Date/Publication: 2020-07-08 05:10:02 UTC
