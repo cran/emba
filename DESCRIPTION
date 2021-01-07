@@ -1,7 +1,7 @@
 Package: emba
 Type: Package
 Title: Ensemble Boolean Model Biomarker Analysis
-Version: 0.1.7
+Version: 0.1.8
 Authors@R: person("John", "Zobolas", role = c("aut", "cph", "cre"), 
   email = "bblodfon@gmail.com", comment = c(ORCID = "0000-0002-3609-8674"))
 Description: Analysis and visualization of an ensemble of boolean models for 
@@ -35,8 +35,8 @@ Imports: graphics, grDevices, utils, purrr, rje (>= 1.10), igraph (>=
 Suggests: testthat, knitr, rmarkdown, xfun
 VignetteBuilder: knitr
 NeedsCompilation: no
-Packaged: 2020-09-22 09:20:25 UTC; john
+Packaged: 2021-01-06 11:00:44 UTC; john
 Author: John Zobolas [aut, cph, cre] (<https://orcid.org/0000-0002-3609-8674>)
 Maintainer: John Zobolas <bblodfon@gmail.com>
 Repository: CRAN
-Date/Publication: 2020-09-22 10:50:06 UTC
+Date/Publication: 2021-01-07 04:00:02 UTC

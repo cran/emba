@@ -10,7 +10,7 @@ library(Ckmeans.1d.dp)
 pr = function(x) invisible(x)
 
 ## ----input-1------------------------------------------------------------------
-data.list = readRDS(url("https://github.com/bblodfon/emba/blob/master/vignettes/data.rds?raw=true"))
+data.list = readRDS(url("https://github.com/bblodfon/emba/blob/main/vignettes/data.rds?raw=true"))
 
 model.predictions = data.list$model.predictions
 models.stable.state = data.list$models.stable.state
